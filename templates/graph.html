@@ -123,6 +123,79 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Profile panel */
+  #profile-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 380px;
+    max-width: 90vw;
+    height: 100%;
+    background: #fffff0;
+    border-left: 2px solid #cccc99;
+    box-shadow: -4px 0 12px rgba(0,0,0,0.1);
+    z-index: 25;
+    overflow-y: auto;
+    display: none;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  #profile-panel.show { display: block; }
+  #profile-close {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    color: #886644;
+    line-height: 1;
+    z-index: 1;
+  }
+  #profile-close:hover { color: #554400; }
+  .profile-inner {
+    padding: 20px;
+  }
+  .profile-photo {
+    width: 100%;
+    max-width: 200px;
+    border-radius: 6px;
+    border: 2px solid #cccc99;
+    display: block;
+    margin: 0 auto 16px;
+  }
+  .profile-name {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #554400;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .profile-name a {
+    color: #1a6fb5;
+    text-decoration: underline;
+  }
+  .profile-name a:hover { color: #0d4f8b; }
+  .profile-section {
+    margin: 10px 0;
+    font-size: 0.88rem;
+    color: #555;
+    line-height: 1.5;
+  }
+  .profile-section-label {
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: #886644;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .profile-loading {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+  }
 </style>
 </head>
 <body>
@@ -135,6 +208,10 @@
   <div id="loading-overlay">Loading network graph<span class="spinner"></span></div>
   <svg id="graph-svg"></svg>
   <div id="tooltip"></div>
+  <div id="profile-panel">
+    <button id="profile-close">&times;</button>
+    <div id="profile-content"></div>
+  </div>
   <div id="legend">
     <h4>Connections</h4>
     <div class="legend-item">
@@ -158,6 +235,21 @@
   const svg = d3.select('#graph-svg');
   const tooltip = document.getElementById('tooltip');
   const loadingOverlay = document.getElementById('loading-overlay');
+  const profilePanel = document.getElementById('profile-panel');
+  const profileContent = document.getElementById('profile-content');
+
+  // Read identity from cookie
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : null;
+  }
+  function esc(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+  const identityName = getCookie('attendee_name');
 
   // Fetch graph data
   let data;
@@ -183,10 +275,13 @@
   const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
 
   // Create force simulation
+  // forceX/forceY pull all nodes toward center, preventing unconnected nodes
+  // from drifting far out to the periphery
   const simulation = d3.forceSimulation(data.nodes)
     .force('link', d3.forceLink(data.edges).id(d => d.id).distance(80))
     .force('charge', d3.forceManyBody().strength(-120))
-    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('x', d3.forceX(width / 2).strength(0.08))
+    .force('y', d3.forceY(height / 2).strength(0.08))
     .force('collision', d3.forceCollide().radius(18));
 
   // Zoom behavior
@@ -238,6 +333,8 @@
   // Draw nodes
   const nodeGroup = g.append('g').attr('class', 'nodes');
 
+  let dragMoved = false;
+
   const nodeElements = nodeGroup.selectAll('g')
     .data(data.nodes)
     .join('g')
@@ -248,21 +345,27 @@
       .on('end', dragEnded)
     );
 
-  // Circle background for each node
+  // Find identity node ID
+  const identityId = identityName
+    ? (data.nodes.find(n => n.name.toLowerCase() === identityName.toLowerCase()) || {}).id
+    : null;
+
+  // Circle background for each node — bold border for current user
   nodeElements.append('circle')
-    .attr('r', 10)
+    .attr('r', d => d.id === identityId ? 13 : 10)
     .attr('fill', '#ddbb99')
-    .attr('stroke', '#aa8866')
-    .attr('stroke-width', 1.5);
+    .attr('stroke', d => d.id === identityId ? '#554400' : '#aa8866')
+    .attr('stroke-width', d => d.id === identityId ? 3.5 : 1.5);
 
   // Clip path for thumbnail images
   const defs = svg.append('defs');
   data.nodes.forEach(n => {
     if (n.thumbnail_url) {
+      const r = n.id === identityId ? 13 : 10;
       defs.append('clipPath')
         .attr('id', `clip-${n.id}`)
         .append('circle')
-        .attr('r', 10)
+        .attr('r', r)
         .attr('cx', 0)
         .attr('cy', 0);
     }
@@ -271,12 +374,13 @@
   // Add thumbnail images where available
   nodeElements.each(function(d) {
     if (d.thumbnail_url) {
+      const r = d.id === identityId ? 13 : 10;
       d3.select(this).append('image')
         .attr('xlink:href', d.thumbnail_url)
-        .attr('x', -10)
-        .attr('y', -10)
-        .attr('width', 20)
-        .attr('height', 20)
+        .attr('x', -r)
+        .attr('y', -r)
+        .attr('width', r * 2)
+        .attr('height', r * 2)
         .attr('clip-path', `url(#clip-${d.id})`)
         .attr('preserveAspectRatio', 'xMidYMid slice');
     }
@@ -311,24 +415,68 @@
     })
     .on('mouseout', function() {
       tooltip.style.display = 'none';
-    })
-    .on('click', function(event, d) {
-      event.stopPropagation();
-      if (selectedNode === d.id) {
-        // Deselect
-        selectedNode = null;
-        resetHighlight();
-      } else {
-        selectedNode = d.id;
-        highlightNode(d.id);
-      }
     });
 
   // Click on background to deselect
   svg.on('click', function() {
     selectedNode = null;
     resetHighlight();
+    closeProfile();
   });
+
+  // Profile panel close button
+  document.getElementById('profile-close').addEventListener('click', function(e) {
+    e.stopPropagation();
+    selectedNode = null;
+    resetHighlight();
+    closeProfile();
+  });
+
+  function closeProfile() {
+    profilePanel.classList.remove('show');
+  }
+
+  async function openProfile(nodeId) {
+    profilePanel.classList.add('show');
+    profileContent.innerHTML = '<div class="profile-loading">Loading<span class="spinner"></span></div>';
+
+    try {
+      const res = await fetch(`/api/stars?ids=${nodeId}`);
+      const attendees = await res.json();
+      if (!attendees.length) {
+        profileContent.innerHTML = '<div class="profile-loading">Profile not found.</div>';
+        return;
+      }
+      const a = attendees[0];
+
+      let html = '<div class="profile-inner">';
+
+      if (a.thumbnail_url) {
+        html += `<img class="profile-photo" src="${esc(a.thumbnail_url)}" alt="${esc(a.name)}">`;
+      }
+
+      const nameText = esc(a.name);
+      const nameHtml = a.linkedin_url
+        ? `<a href="${esc(a.linkedin_url)}" target="_blank" rel="noopener">${nameText}</a>`
+        : nameText;
+      html += `<div class="profile-name">${nameHtml}</div>`;
+
+      if (a.stuff_i_do) {
+        html += `<div class="profile-section"><div class="profile-section-label">Stuff I do</div>${esc(a.stuff_i_do)}</div>`;
+      }
+      if (a.stuff_i_can_share) {
+        html += `<div class="profile-section"><div class="profile-section-label">Can share / help with</div>${esc(a.stuff_i_can_share)}</div>`;
+      }
+      if (a.stuff_i_need) {
+        html += `<div class="profile-section"><div class="profile-section-label">Needs</div>${esc(a.stuff_i_need)}</div>`;
+      }
+
+      html += '</div>';
+      profileContent.innerHTML = html;
+    } catch (e) {
+      profileContent.innerHTML = '<div class="profile-loading">Failed to load profile.</div>';
+    }
+  }
 
   function highlightNode(nodeId) {
     const neighbors = adjacency.get(nodeId) || new Set();
@@ -338,10 +486,10 @@
     nodeElements.selectAll('image')
       .attr('opacity', d => (d.id === nodeId || neighbors.has(d.id)) ? 1 : 0.12);
 
-    // Highlight selected node
+    // Highlight selected node, preserve identity bold border
     nodeElements.select('circle')
-      .attr('stroke-width', d => d.id === nodeId ? 3 : 1.5)
-      .attr('stroke', d => d.id === nodeId ? '#554400' : '#aa8866');
+      .attr('stroke-width', d => d.id === nodeId ? 3.5 : (d.id === identityId ? 3.5 : 1.5))
+      .attr('stroke', d => (d.id === nodeId || d.id === identityId) ? '#554400' : '#aa8866');
 
     edgeElements
       .attr('opacity', d => {
@@ -354,8 +502,8 @@
   function resetHighlight() {
     nodeElements.select('circle')
       .attr('opacity', 1)
-      .attr('stroke-width', 1.5)
-      .attr('stroke', '#aa8866');
+      .attr('stroke-width', d => d.id === identityId ? 3.5 : 1.5)
+      .attr('stroke', d => d.id === identityId ? '#554400' : '#aa8866');
     nodeElements.selectAll('image')
       .attr('opacity', 1);
     edgeElements
@@ -371,14 +519,16 @@
     nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
   });
 
-  // Drag handlers
+  // Drag handlers — also detect clicks (D3 drag suppresses click events)
   function dragStarted(event, d) {
+    dragMoved = false;
     if (!event.active) simulation.alphaTarget(0.3).restart();
     d.fx = d.x;
     d.fy = d.y;
   }
 
   function dragged(event, d) {
+    dragMoved = true;
     d.fx = event.x;
     d.fy = event.y;
   }
@@ -387,6 +537,19 @@
     if (!event.active) simulation.alphaTarget(0);
     d.fx = null;
     d.fy = null;
+
+    // If pointer didn't move, treat as a click
+    if (!dragMoved) {
+      if (selectedNode === d.id) {
+        selectedNode = null;
+        resetHighlight();
+        closeProfile();
+      } else {
+        selectedNode = d.id;
+        highlightNode(d.id);
+        openProfile(d.id);
+      }
+    }
   }
 })();
 </script>
