@@ -250,6 +250,7 @@
     return div.innerHTML;
   }
   const identityName = getCookie('attendee_name');
+  console.log('Graph identity cookie:', identityName);
 
   // Fetch graph data
   let data;
@@ -290,6 +291,19 @@
     .scaleExtent([0.1, 5])
     .on('zoom', (event) => g.attr('transform', event.transform));
   svg.call(zoom);
+
+  // Invisible background rect to catch clicks on empty space
+  g.append('rect')
+    .attr('width', width * 3)
+    .attr('height', height * 3)
+    .attr('x', -width)
+    .attr('y', -height)
+    .attr('fill', 'transparent')
+    .on('click', function() {
+      selectedNode = null;
+      resetHighlight();
+      closeProfile();
+    });
 
   // Arrowhead/taper definitions - we draw tapered shapes manually
 
@@ -333,8 +347,6 @@
   // Draw nodes
   const nodeGroup = g.append('g').attr('class', 'nodes');
 
-  let dragMoved = false;
-
   const nodeElements = nodeGroup.selectAll('g')
     .data(data.nodes)
     .join('g')
@@ -346,9 +358,12 @@
     );
 
   // Find identity node ID
-  const identityId = identityName
-    ? (data.nodes.find(n => n.name.toLowerCase() === identityName.toLowerCase()) || {}).id
-    : null;
+  let identityId = null;
+  if (identityName) {
+    const identityNode = data.nodes.find(n => n.name.toLowerCase() === identityName.toLowerCase());
+    if (identityNode) identityId = identityNode.id;
+    console.log('Graph identity match:', identityName, '->', identityId);
+  }
 
   // Circle background for each node — bold border for current user
   nodeElements.append('circle')
@@ -417,12 +432,36 @@
       tooltip.style.display = 'none';
     });
 
-  // Click on background to deselect
-  svg.on('click', function() {
-    selectedNode = null;
-    resetHighlight();
-    closeProfile();
+  // Click detection via native pointer events (D3 drag suppresses 'click' events)
+  nodeElements.each(function(d) {
+    let ptrX, ptrY;
+    this.addEventListener('pointerdown', function(e) {
+      ptrX = e.clientX;
+      ptrY = e.clientY;
+    });
+    this.addEventListener('pointerup', function(e) {
+      const dx = e.clientX - ptrX;
+      const dy = e.clientY - ptrY;
+      if (dx * dx + dy * dy < 25) {
+        // This was a click, not a drag
+        handleNodeClick(d);
+      }
+    });
   });
+
+  function handleNodeClick(d) {
+    if (selectedNode === d.id) {
+      selectedNode = null;
+      resetHighlight();
+      closeProfile();
+    } else {
+      selectedNode = d.id;
+      highlightNode(d.id);
+      openProfile(d.id);
+    }
+  }
+
+  // Background deselect handled by the transparent rect in the g group
 
   // Profile panel close button
   document.getElementById('profile-close').addEventListener('click', function(e) {
@@ -519,16 +558,14 @@
     nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
   });
 
-  // Drag handlers — also detect clicks (D3 drag suppresses click events)
+  // Drag handlers
   function dragStarted(event, d) {
-    dragMoved = false;
     if (!event.active) simulation.alphaTarget(0.3).restart();
     d.fx = d.x;
     d.fy = d.y;
   }
 
   function dragged(event, d) {
-    dragMoved = true;
     d.fx = event.x;
     d.fy = event.y;
   }
@@ -537,19 +574,6 @@
     if (!event.active) simulation.alphaTarget(0);
     d.fx = null;
     d.fy = null;
-
-    // If pointer didn't move, treat as a click
-    if (!dragMoved) {
-      if (selectedNode === d.id) {
-        selectedNode = null;
-        resetHighlight();
-        closeProfile();
-      } else {
-        selectedNode = d.id;
-        highlightNode(d.id);
-        openProfile(d.id);
-      }
-    }
   }
 })();
 </script>
