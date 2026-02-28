@@ -97,6 +97,40 @@ If you cannot determine a field, use an empty string."""
         return None
 
 
+def debug_slide_images(page_num):
+    """Return info about all images on a specific slide."""
+    resp = httpx.get(PDF_EXPORT_URL, follow_redirects=True, timeout=120)
+    resp.raise_for_status()
+    doc = fitz.open(stream=resp.content, filetype="pdf")
+    page = doc[page_num]
+    images = page.get_images(full=True)
+    result = []
+    for img_info in images:
+        xref = img_info[0]
+        try:
+            img_data = doc.extract_image(xref)
+            if not img_data:
+                continue
+            w = img_data.get("width", 0)
+            h = img_data.get("height", 0)
+            ext = img_data.get("ext", "?")
+            size = len(img_data.get("image", b""))
+            bpp = size / max(w * h, 1)
+            result.append({
+                "xref": xref,
+                "width": w,
+                "height": h,
+                "ext": ext,
+                "file_size": size,
+                "bytes_per_pixel": round(bpp, 3),
+                "area": w * h,
+            })
+        except Exception as e:
+            result.append({"xref": xref, "error": str(e)})
+    doc.close()
+    return {"page": page_num, "image_count": len(result), "images": result}
+
+
 def fetch_profile_photos(pdf_bytes=None):
     """Render each PDF page as a thumbnail image and save locally."""
     if not PRESENTATION_ID:

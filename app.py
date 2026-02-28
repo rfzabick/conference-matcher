@@ -118,6 +118,14 @@ def api_fetch_photos():
     return jsonify(result)
 
 
+@app.route("/api/debug-images")
+def api_debug_images():
+    """Show all images extracted from a specific slide."""
+    from slides import debug_slide_images
+    page = request.args.get("page", "14")
+    return jsonify(debug_slide_images(int(page)))
+
+
 # --- Background Scheduler ---
 
 def scheduled_refresh():
