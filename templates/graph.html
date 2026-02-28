@@ -183,6 +183,13 @@
     color: #555;
     line-height: 1.5;
   }
+  .profile-section ul {
+    margin: 2px 0 0 18px;
+    padding: 0;
+  }
+  .profile-section li {
+    margin: 1px 0;
+  }
   .profile-section-label {
     font-weight: 700;
     font-size: 0.78rem;
@@ -201,7 +208,6 @@
 <body>
 <div id="topnav">
   <div class="site-name"><a href="https://punkgrok.org">punkgrok.org</a></div>
-  <a href="/" class="nav-link">Back to Matcher</a>
 </div>
 
 <div id="graph-container">
@@ -213,6 +219,7 @@
     <div id="profile-content"></div>
   </div>
   <div id="legend">
+    <a href="/" style="font-size: 0.85rem; color: #554400; display: block; margin-bottom: 8px;">Back to Matcher</a>
     <h4>Connections</h4>
     <div class="legend-item">
       <div class="legend-swatch" style="background: linear-gradient(90deg, #d4a843, #d4a843); height: 8px;"></div>
@@ -248,6 +255,12 @@
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+  function toBullets(str) {
+    if (!str) return '';
+    const items = str.split(';').map(s => s.trim()).filter(Boolean);
+    if (items.length <= 1) return esc(str);
+    return '<ul>' + items.map(item => `<li>${esc(item)}</li>`).join('') + '</ul>';
   }
   const identityName = getCookie('attendee_name');
   console.log('Graph identity cookie:', identityName);
@@ -504,13 +517,13 @@
       html += `<div class="profile-name">${nameHtml}</div>`;
 
       if (a.stuff_i_do) {
-        html += `<div class="profile-section"><div class="profile-section-label">Stuff I do</div>${esc(a.stuff_i_do)}</div>`;
+        html += `<div class="profile-section"><div class="profile-section-label">Stuff I do</div>${toBullets(a.stuff_i_do)}</div>`;
       }
       if (a.stuff_i_can_share) {
-        html += `<div class="profile-section"><div class="profile-section-label">Can share / help with</div>${esc(a.stuff_i_can_share)}</div>`;
+        html += `<div class="profile-section"><div class="profile-section-label">Can share / help with</div>${toBullets(a.stuff_i_can_share)}</div>`;
       }
       if (a.stuff_i_need) {
-        html += `<div class="profile-section"><div class="profile-section-label">Needs</div>${esc(a.stuff_i_need)}</div>`;
+        html += `<div class="profile-section"><div class="profile-section-label">Needs</div>${toBullets(a.stuff_i_need)}</div>`;
       }
 
       html += '</div>';

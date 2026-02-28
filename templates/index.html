@@ -252,6 +252,13 @@
     color: #555;
     line-height: 1.5;
   }
+  .card-section ul {
+    margin: 2px 0 0 18px;
+    padding: 0;
+  }
+  .card-section li {
+    margin: 1px 0;
+  }
   .card-section-label {
     font-family: Arial, Helvetica, sans-serif;
     font-weight: 700;
@@ -331,12 +338,12 @@
 <body>
 <div id="topnav">
   <div class="site-name"><a href="https://punkgrok.org">punkgrok.org</a></div>
-  <a href="/graph" style="font-family: Arial, Helvetica, sans-serif; font-size: 0.9rem; color: #554400; text-decoration: none;">View Network Graph</a>
 </div>
 <div class="container">
   <header>
     <h1>Conference Matcher</h1>
     <p>Find your people at the conference</p>
+    <a href="/graph" style="font-family: Arial, Helvetica, sans-serif; font-size: 0.9rem; color: #554400; text-decoration: none; margin-top: 8px; display: inline-block;">View Network Graph</a>
   </header>
 
   <div id="main-app">
@@ -684,13 +691,13 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
   }
 
   if (attendee.stuff_i_do) {
-    html += `<div class="card-section"><div class="card-section-label">Stuff I do</div>${esc(attendee.stuff_i_do)}</div>`;
+    html += `<div class="card-section"><div class="card-section-label">Stuff I do</div>${toBullets(attendee.stuff_i_do)}</div>`;
   }
   if (attendee.stuff_i_can_share) {
-    html += `<div class="card-section"><div class="card-section-label">Can share / help with</div>${esc(attendee.stuff_i_can_share)}</div>`;
+    html += `<div class="card-section"><div class="card-section-label">Can share / help with</div>${toBullets(attendee.stuff_i_can_share)}</div>`;
   }
   if (attendee.stuff_i_need) {
-    html += `<div class="card-section"><div class="card-section-label">Needs</div>${esc(attendee.stuff_i_need)}</div>`;
+    html += `<div class="card-section"><div class="card-section-label">Needs</div>${toBullets(attendee.stuff_i_need)}</div>`;
   }
 
   html += '</div></div>';
@@ -702,6 +709,13 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function toBullets(str) {
+  if (!str) return '';
+  const items = str.split(';').map(s => s.trim()).filter(Boolean);
+  if (items.length <= 1) return esc(str);
+  return '<ul>' + items.map(item => `<li>${esc(item)}</li>`).join('') + '</ul>';
 }
 
 // --- Star Toggle ---
