@@ -8,7 +8,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, connect_timeout=5)
 
 
 def put_db(conn):

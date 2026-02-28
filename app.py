@@ -17,16 +17,16 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Initialize database (retry on transient Postgres failures)
-for _attempt in range(5):
+for _attempt in range(3):
     try:
         init_db()
         break
     except Exception as e:
         logger.warning(f"init_db attempt {_attempt + 1} failed: {e}")
         import time as _time
-        _time.sleep(2)
+        _time.sleep(1)
 else:
-    logger.error("Failed to initialize database after 5 attempts")
+    logger.error("Failed to initialize database after 3 attempts")
 
 
 # --- Routes ---
