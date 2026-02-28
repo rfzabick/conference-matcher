@@ -205,8 +205,11 @@
     border-radius: 4px;
     padding: 18px;
     transition: border-color 0.2s;
+    display: flex;
+    gap: 16px;
   }
   .card:hover { border-color: #aa8866; }
+  .card-body { flex: 1; min-width: 0; }
   .card-header {
     display: flex;
     justify-content: space-between;
@@ -219,6 +222,15 @@
     color: #554400;
     font-family: Arial, Helvetica, sans-serif;
   }
+  .card-name a {
+    color: #554400;
+    text-decoration: none;
+  }
+  .card-name a:hover {
+    text-decoration: underline;
+    color: #3333ff;
+  }
+  .card-name a:visited { color: #554400; }
   .card-title {
     font-size: 0.85rem;
     color: #886644;
@@ -251,12 +263,13 @@
     margin-bottom: 2px;
   }
   .card-photo {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    border-radius: 6px;
     object-fit: cover;
     border: 2px solid #cccc99;
     flex-shrink: 0;
+    align-self: flex-start;
   }
   .match-reason {
     margin-top: 8px;
@@ -644,16 +657,22 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
     ? `<img class="card-photo" src="${esc(attendee.thumbnail_url)}" alt="${esc(attendee.name)}" loading="lazy">`
     : '';
 
+  const nameText = esc(attendee.name);
+  const nameHtml = attendee.linkedin_url
+    ? `<a href="${esc(attendee.linkedin_url)}" target="_blank" rel="noopener">${nameText}</a>`
+    : nameText;
+
   let html = `<div class="card${mutualClass}" data-card-id="${attendee.id}">
-    <div class="card-header">
-      ${photoHtml}
-      <div style="flex:1">
-        <div class="card-name">${esc(attendee.name)}${isMutual ? '<span class="mutual-badge">MUTUAL MATCH</span>' : ''}</div>
-      </div>
-      <button class="star-btn" onclick="toggleStar(${attendee.id})" title="${isStarred ? 'Unstar' : 'Star'}">
-        ${isStarred ? '\u2B50' : '\u2606'}
-      </button>
-    </div>`;
+    ${photoHtml}
+    <div class="card-body">
+      <div class="card-header">
+        <div style="flex:1">
+          <div class="card-name">${nameHtml}${isMutual ? '<span class="mutual-badge">MUTUAL MATCH</span>' : ''}</div>
+        </div>
+        <button class="star-btn" onclick="toggleStar(${attendee.id})" title="${isStarred ? 'Unstar' : 'Star'}">
+          ${isStarred ? '\u2B50' : '\u2606'}
+        </button>
+      </div>`;
 
   if (matchReason) {
     html += `<div class="match-reason">${isMutual ? 'You both need what the other can offer! ' : ''}${esc(matchReason)}</div>`;
@@ -669,7 +688,7 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
     html += `<div class="card-section"><div class="card-section-label">Needs</div>${esc(attendee.stuff_i_need)}</div>`;
   }
 
-  html += '</div>';
+  html += '</div></div>';
   return html;
 }
 

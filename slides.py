@@ -57,12 +57,13 @@ Extract:
 - stuff_i_do: What they do (their work, roles, projects, hobbies)
 - stuff_i_can_share: What they can share or help others with (skills, knowledge, resources)
 - stuff_i_need: What they need or are looking for (help, connections, resources, advice)
+- linkedin_url: Their LinkedIn profile URL if visible on the slide (look for linkedin.com links or LinkedIn icons with URLs)
 
 Respond ONLY with valid JSON in this exact format:
-{"name": "...", "stuff_i_do": "...", "stuff_i_can_share": "...", "stuff_i_need": "..."}
+{"name": "...", "stuff_i_do": "...", "stuff_i_can_share": "...", "stuff_i_need": "...", "linkedin_url": "..."}
 
 If this slide does not appear to be about a specific person (e.g. it's a title slide, agenda, or instructions), respond with:
-{"name": "", "stuff_i_do": "", "stuff_i_can_share": "", "stuff_i_need": ""}
+{"name": "", "stuff_i_do": "", "stuff_i_can_share": "", "stuff_i_need": "", "linkedin_url": ""}
 
 If you cannot determine a field, use an empty string."""
 
@@ -210,7 +211,7 @@ def fetch_profile_photos(pdf_bytes=None):
                     coverage = rendered_area / max(page_area, 1)
 
                     # Skip images that cover most of the page (backgrounds)
-                    if coverage > 0.8:
+                    if coverage > 0.9:
                         continue
 
                     # Skip tiny rendered images (icons, decorations)
@@ -346,7 +347,8 @@ def refresh_slides():
                 stuff_i_can_share=data.get("stuff_i_can_share", ""),
                 stuff_i_need=data.get("stuff_i_need", ""),
                 thumbnail_url="",
-                content_hash=content_hash
+                content_hash=content_hash,
+                linkedin_url=data.get("linkedin_url", "")
             )
 
             if is_new:

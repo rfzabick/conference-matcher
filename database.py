@@ -23,6 +23,7 @@ def init_db():
             stuff_i_do TEXT DEFAULT '',
             stuff_i_can_share TEXT DEFAULT '',
             stuff_i_need TEXT DEFAULT '',
+            linkedin_url TEXT DEFAULT '',
             thumbnail_url TEXT DEFAULT '',
             slide_content_hash TEXT DEFAULT '',
             created_at REAL NOT NULL,
@@ -41,25 +42,30 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_attendees_slide_id ON attendees(slide_object_id);
         CREATE INDEX IF NOT EXISTS idx_match_cache_user ON match_cache(user_name);
     """)
+    # Migration: add linkedin_url column if missing
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(attendees)").fetchall()]
+    if "linkedin_url" not in cols:
+        conn.execute("ALTER TABLE attendees ADD COLUMN linkedin_url TEXT DEFAULT ''")
     conn.commit()
     conn.close()
 
 
-def upsert_attendee(slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, thumbnail_url, content_hash):
+def upsert_attendee(slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, thumbnail_url, content_hash, linkedin_url=""):
     conn = get_db()
     now = time.time()
     conn.execute("""
-        INSERT INTO attendees (slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, thumbnail_url, slide_content_hash, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO attendees (slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, linkedin_url, thumbnail_url, slide_content_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(slide_object_id) DO UPDATE SET
             name=excluded.name,
             stuff_i_do=excluded.stuff_i_do,
             stuff_i_can_share=excluded.stuff_i_can_share,
             stuff_i_need=excluded.stuff_i_need,
+            linkedin_url=excluded.linkedin_url,
             thumbnail_url=excluded.thumbnail_url,
             slide_content_hash=excluded.slide_content_hash,
             updated_at=excluded.updated_at
-    """, (slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, thumbnail_url, content_hash, now, now))
+    """, (slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, linkedin_url, thumbnail_url, content_hash, now, now))
     conn.commit()
     conn.close()
 
