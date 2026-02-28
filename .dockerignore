@@ -1,0 +1,6 @@
+__pycache__
+*.pyc
+.env
+conference_matcher.db
+*.db-journal
+*.db-wal

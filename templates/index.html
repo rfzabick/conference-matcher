@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conference Matcher</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Courier New", Courier, monospace;
+    background: #fffff0;
+    color: #333;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+
+  /* Header */
+  header {
+    text-align: center;
+    padding: 30px 0 20px;
+    border-bottom: 2px solid #aa8866;
+    margin-bottom: 24px;
+    background: #ddbb99;
+    margin: -20px -20px 24px;
+    padding: 30px 20px 20px;
+  }
+  header h1 {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 2rem;
+    color: #554400;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  header p { color: #886644; font-size: 0.95rem; }
+
+  /* Identity Section */
+  #identity-section {
+    background: #eeeecc;
+    border: 1px solid #cccc99;
+    border-radius: 4px;
+    padding: 30px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  #identity-section h2 {
+    margin-bottom: 16px;
+    font-size: 1.3rem;
+    color: #554400;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .autocomplete-wrap {
+    position: relative;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  #name-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid #cccc99;
+    border-radius: 4px;
+    background: #fffff0;
+    color: #333;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #name-input:focus { border-color: #aa8866; }
+  #name-input::placeholder { color: #999977; }
+  .autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0; right: 0;
+    background: #fffff0;
+    border: 1px solid #cccc99;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+  }
+  .autocomplete-list.show { display: block; }
+  .autocomplete-item {
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 0.95rem;
+  }
+  .autocomplete-item:hover, .autocomplete-item.active {
+    background: #eeeecc;
+  }
+  #identity-badge {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  #identity-badge.show { display: flex; }
+  #identity-badge span {
+    color: #554400;
+    font-weight: 700;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  #identity-badge button {
+    background: #ddbb99;
+    border: 1px solid #aa8866;
+    color: #554400;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  #identity-badge button:hover { background: #ccaa88; }
+
+  /* Main App */
+  #main-app { display: none; }
+  #main-app.show { display: block; }
+
+  /* Search */
+  .search-bar {
+    margin-bottom: 24px;
+  }
+  #search-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid #cccc99;
+    border-radius: 4px;
+    background: #fffff0;
+    color: #333;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 1rem;
+    outline: none;
+  }
+  #search-input:focus { border-color: #aa8866; }
+  #search-input::placeholder { color: #999977; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #cccc99;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #cccc99;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    background: #eeeecc;
+    color: #886644;
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: Arial, Helvetica, sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-right: -1px;
+  }
+  .tab-btn.active {
+    background: #fffff0;
+    color: #554400;
+    border-bottom: 1px solid #fffff0;
+    font-weight: 700;
+  }
+  .tab-btn:hover:not(.active) { background: #ddddbb; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .card {
+    background: #fffff0;
+    border: 1px solid #cccc99;
+    border-radius: 4px;
+    padding: 18px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #aa8866; }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+  .card-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #554400;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .card-title {
+    font-size: 0.85rem;
+    color: #886644;
+    margin-top: 2px;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .star-btn {
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    transition: transform 0.15s;
+  }
+  .star-btn:hover { transform: scale(1.2); }
+  .card-section {
+    margin: 8px 0;
+    font-size: 0.88rem;
+    color: #555;
+    line-height: 1.5;
+  }
+  .card-section-label {
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: #886644;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .card-thumbnail {
+    margin-top: 12px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #cccc99;
+  }
+  .card-thumbnail img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .match-reason {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #eeeecc;
+    border-left: 3px solid #aa8866;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.85rem;
+    color: #665522;
+    font-style: italic;
+  }
+  .mutual-badge {
+    display: inline-block;
+    background: #bb8833;
+    color: #fffff0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: Arial, Helvetica, sans-serif;
+    padding: 2px 8px;
+    border-radius: 3px;
+    margin-left: 8px;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+  }
+  .card.mutual-match {
+    border-color: #bb8833;
+    border-width: 2px;
+    background: #fefef0;
+  }
+
+  /* Loading & Empty States */
+  .loading, .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+  }
+  .loading::after {
+    content: '';
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cccc99;
+    border-top-color: #aa8866;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  a { color: rgb(15%, 30%, 30%); }
+  a:visited { color: #669966; }
+  a:hover, a:active { color: #3333ff; }
+
+  @media (max-width: 500px) {
+    header h1 { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Conference Matcher</h1>
+    <p>Find your people at the conference</p>
+  </header>
+
+  <!-- Identity Section -->
+  <div id="identity-section">
+    <h2>Who are you?</h2>
+    <div class="autocomplete-wrap">
+      <input type="text" id="name-input" placeholder="Start typing your name..." autocomplete="off">
+      <div class="autocomplete-list" id="autocomplete-list"></div>
+    </div>
+    <div id="identity-badge">
+      <span id="identity-name"></span>
+      <button onclick="clearIdentity()">Change</button>
+    </div>
+  </div>
+
+  <!-- Main App (shown after identification) -->
+  <div id="main-app">
+    <div class="search-bar">
+      <input type="text" id="search-input" placeholder="Search attendees by name, interests, or bio...">
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="matches">AI Matches</button>
+      <button class="tab-btn" data-tab="starred">Starred</button>
+      <button class="tab-btn" data-tab="browse">Browse All</button>
+    </div>
+
+    <div class="tab-panel active" id="panel-matches">
+      <div id="matches-content"><div class="loading">Finding your best matches</div></div>
+    </div>
+    <div class="tab-panel" id="panel-starred">
+      <div id="starred-content"><div class="empty-state">No starred attendees yet. Star people you want to remember!</div></div>
+    </div>
+    <div class="tab-panel" id="panel-browse">
+      <div id="browse-content"><div class="loading">Loading attendees</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = {
+  names: [],
+  identity: null,
+  starred: new Set(),
+  matchData: null,
+  searchTimeout: null,
+};
+
+// --- Cookie helpers ---
+function setCookie(name, value, days = 365) {
+  const d = new Date();
+  d.setTime(d.getTime() + days * 86400000);
+  document.cookie = `${name}=${encodeURIComponent(value)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
+}
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+function deleteCookie(name) {
+  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+}
+
+// --- Init ---
+async function init() {
+  // Load names for autocomplete
+  try {
+    const res = await fetch('/api/names');
+    state.names = await res.json();
+  } catch (e) {
+    state.names = [];
+  }
+
+  // Load starred from cookie
+  const starredCookie = getCookie('starred_attendees');
+  if (starredCookie) {
+    starredCookie.split(',').filter(Boolean).forEach(id => state.starred.add(parseInt(id)));
+  }
+
+  // Check for existing identity
+  const savedName = getCookie('attendee_name');
+  if (savedName) {
+    setIdentity(savedName);
+  }
+
+  // Setup listeners
+  setupAutocomplete();
+  setupTabs();
+  setupSearch();
+}
+
+// --- Autocomplete ---
+function setupAutocomplete() {
+  const input = document.getElementById('name-input');
+  const list = document.getElementById('autocomplete-list');
+  let activeIdx = -1;
+
+  input.addEventListener('input', () => {
+    const val = input.value.trim().toLowerCase();
+    list.innerHTML = '';
+    activeIdx = -1;
+    if (!val) { list.classList.remove('show'); return; }
+
+    const matches = state.names.filter(n => n.toLowerCase().includes(val)).slice(0, 10);
+    if (!matches.length) { list.classList.remove('show'); return; }
+
+    matches.forEach((name, i) => {
+      const div = document.createElement('div');
+      div.className = 'autocomplete-item';
+      div.textContent = name;
+      div.addEventListener('click', () => selectName(name));
+      list.appendChild(div);
+    });
+    list.classList.add('show');
+  });
+
+  input.addEventListener('keydown', (e) => {
+    const items = list.querySelectorAll('.autocomplete-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      items.forEach((it, i) => it.classList.toggle('active', i === activeIdx));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      items.forEach((it, i) => it.classList.toggle('active', i === activeIdx));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0 && items[activeIdx]) {
+        selectName(items[activeIdx].textContent);
+      }
+    } else if (e.key === 'Escape') {
+      list.classList.remove('show');
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.autocomplete-wrap')) list.classList.remove('show');
+  });
+}
+
+function selectName(name) {
+  document.getElementById('autocomplete-list').classList.remove('show');
+  document.getElementById('name-input').value = '';
+  setIdentity(name);
+}
+
+function setIdentity(name) {
+  state.identity = name;
+  setCookie('attendee_name', name);
+
+  document.getElementById('name-input').style.display = 'none';
+  document.getElementById('identity-badge').classList.add('show');
+  document.getElementById('identity-name').textContent = name;
+  document.getElementById('main-app').classList.add('show');
+
+  loadMatches();
+  loadBrowse();
+  loadStarred();
+}
+
+function clearIdentity() {
+  state.identity = null;
+  state.matchData = null;
+  deleteCookie('attendee_name');
+
+  document.getElementById('name-input').style.display = '';
+  document.getElementById('identity-badge').classList.remove('show');
+  document.getElementById('main-app').classList.remove('show');
+  document.getElementById('matches-content').innerHTML = '<div class="loading">Finding your best matches</div>';
+}
+
+// --- Tabs ---
+function setupTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+}
+
+// --- Search ---
+function setupSearch() {
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    clearTimeout(state.searchTimeout);
+    state.searchTimeout = setTimeout(() => {
+      // Switch to browse tab when searching
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelector('[data-tab="browse"]').classList.add('active');
+      document.getElementById('panel-browse').classList.add('active');
+
+      loadBrowse(e.target.value);
+    }, 300);
+  });
+}
+
+// --- Data Loading ---
+async function loadMatches() {
+  const el = document.getElementById('matches-content');
+  el.innerHTML = '<div class="loading">Finding your best matches</div>';
+
+  try {
+    const res = await fetch(`/api/match?name=${encodeURIComponent(state.identity)}`);
+    const data = await res.json();
+
+    if (data.error) {
+      el.innerHTML = `<div class="empty-state">${data.error}</div>`;
+      return;
+    }
+
+    if (!data.matches || !data.matches.length) {
+      el.innerHTML = '<div class="empty-state">No matches found yet. Check back after more people have joined!</div>';
+      return;
+    }
+
+    state.matchData = data;
+
+    // Fetch full profiles for matched attendees
+    const ids = data.matches.map(m => m.attendee_id).join(',');
+    const profilesRes = await fetch(`/api/stars?ids=${ids}`);
+    const profiles = await profilesRes.json();
+    const profileMap = {};
+    profiles.forEach(p => profileMap[p.id] = p);
+
+    el.innerHTML = '<div class="card-grid">' +
+      data.matches.map(m => {
+        const p = profileMap[m.attendee_id];
+        if (!p) return '';
+        return renderCard(p, m.reason, m.mutual || false);
+      }).join('') + '</div>';
+
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state">Failed to load matches. Try again later.</div>';
+  }
+}
+
+async function loadBrowse(query = '') {
+  const el = document.getElementById('browse-content');
+  el.innerHTML = '<div class="loading">Loading attendees</div>';
+
+  try {
+    const url = query ? `/api/search?q=${encodeURIComponent(query)}` : '/api/search';
+    const res = await fetch(url);
+    const attendees = await res.json();
+
+    if (!attendees.length) {
+      el.innerHTML = '<div class="empty-state">No attendees found.</div>';
+      return;
+    }
+
+    el.innerHTML = '<div class="card-grid">' +
+      attendees.map(a => renderCard(a)).join('') + '</div>';
+
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state">Failed to load attendees.</div>';
+  }
+}
+
+async function loadStarred() {
+  const el = document.getElementById('starred-content');
+
+  if (!state.starred.size) {
+    el.innerHTML = '<div class="empty-state">No starred attendees yet. Star people you want to remember!</div>';
+    return;
+  }
+
+  el.innerHTML = '<div class="loading">Loading starred attendees</div>';
+
+  try {
+    const ids = Array.from(state.starred).join(',');
+    const res = await fetch(`/api/stars?ids=${ids}`);
+    const attendees = await res.json();
+
+    if (!attendees.length) {
+      el.innerHTML = '<div class="empty-state">No starred attendees found.</div>';
+      return;
+    }
+
+    el.innerHTML = '<div class="card-grid">' +
+      attendees.map(a => renderCard(a)).join('') + '</div>';
+
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state">Failed to load starred attendees.</div>';
+  }
+}
+
+// --- Card Rendering ---
+function renderCard(attendee, matchReason = null, isMutual = false) {
+  const isStarred = state.starred.has(attendee.id);
+  const mutualClass = isMutual ? ' mutual-match' : '';
+
+  let html = `<div class="card${mutualClass}" data-card-id="${attendee.id}">
+    <div class="card-header">
+      <div>
+        <div class="card-name">${esc(attendee.name)}${isMutual ? '<span class="mutual-badge">MUTUAL MATCH</span>' : ''}</div>
+      </div>
+      <button class="star-btn" onclick="toggleStar(${attendee.id})" title="${isStarred ? 'Unstar' : 'Star'}">
+        ${isStarred ? '\u2B50' : '\u2606'}
+      </button>
+    </div>`;
+
+  if (matchReason) {
+    html += `<div class="match-reason">${isMutual ? 'You both need what the other can offer! ' : ''}${esc(matchReason)}</div>`;
+  }
+
+  if (attendee.stuff_i_do) {
+    html += `<div class="card-section"><div class="card-section-label">Stuff I do</div>${esc(attendee.stuff_i_do)}</div>`;
+  }
+  if (attendee.stuff_i_can_share) {
+    html += `<div class="card-section"><div class="card-section-label">Can share / help with</div>${esc(attendee.stuff_i_can_share)}</div>`;
+  }
+  if (attendee.stuff_i_need) {
+    html += `<div class="card-section"><div class="card-section-label">Needs</div>${esc(attendee.stuff_i_need)}</div>`;
+  }
+
+  if (attendee.thumbnail_url) {
+    html += `<div class="card-thumbnail"><img src="${esc(attendee.thumbnail_url)}" alt="Slide" loading="lazy"></div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// --- Star Toggle ---
+function toggleStar(id) {
+  if (state.starred.has(id)) {
+    state.starred.delete(id);
+  } else {
+    state.starred.add(id);
+  }
+  setCookie('starred_attendees', Array.from(state.starred).join(','));
+
+  // Update all star buttons for this attendee across all panels
+  document.querySelectorAll(`[data-card-id="${id}"] .star-btn`).forEach(btn => {
+    btn.textContent = state.starred.has(id) ? '\u2B50' : '\u2606';
+    btn.title = state.starred.has(id) ? 'Unstar' : 'Star';
+  });
+
+  // Always refresh starred panel
+  loadStarred();
+}
+
+// --- Boot ---
+init();
+</script>
+</body>
+</html>

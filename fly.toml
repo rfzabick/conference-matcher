@@ -1,0 +1,22 @@
+app = 'unprompted'
+primary_region = 'ord'
+
+[build]
+
+[env]
+  DB_PATH = '/data/conference_matcher.db'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[mounts]
+  source = 'data'
+  destination = '/data'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
