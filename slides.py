@@ -204,10 +204,14 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Sort by area descending: largest is the background, second is the profile photo
+            # Remove the largest image (slide background)
             candidates.sort(key=lambda c: c[0] * c[1], reverse=True)
-            pick = 1 if len(candidates) > 1 else 0
-            img_data = candidates[pick][3]
+            if len(candidates) > 1:
+                candidates = candidates[1:]
+
+            # Pick the most square image (profile photos are square, badges are wide)
+            candidates.sort(key=lambda c: c[2])  # c[2] is aspect ratio, lower = more square
+            img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             photo_filename = f"{slide_id}.{ext}"
             photo_path = os.path.join(PHOTOS_DIR, photo_filename)
