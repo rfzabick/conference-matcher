@@ -71,6 +71,11 @@ def api_match():
         return jsonify({"error": "Missing 'name' parameter"}), 400
     result = get_matches_for_user(user_name)
 
+    # Limit to top 10 for the user-facing match page (full list still used by graph)
+    if "matches" in result:
+        result = dict(result)
+        result["matches"] = result["matches"][:10]
+
     # Detect mutual matches: check if each matched person also matched the current user
     user = get_attendee_by_name(user_name)
     if user and "matches" in result:
