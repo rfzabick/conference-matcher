@@ -233,7 +233,8 @@ def fetch_profile_photos(pdf_bytes=None):
                     if len(raw) < 1000 and w * h > 10000:
                         continue  # very small file but large dimensions = solid color
 
-                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage))
+                    file_size = len(raw)
+                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size))
                 except Exception:
                     continue
 
@@ -241,8 +242,8 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Pick the most square rendered image (profile photos render near-square)
-            candidates.sort(key=lambda c: c[2])  # c[2] is rendered aspect ratio
+            # Pick the most square rendered image; break ties by largest file (better quality)
+            candidates.sort(key=lambda c: (c[2], -c[5]))  # aspect asc, file_size desc
             img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             photo_filename = f"{slide_id}.{ext}"
