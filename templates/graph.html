@@ -304,7 +304,7 @@
     .force('charge', d3.forceManyBody().strength(-120))
     .force('x', d3.forceX(width / 2).strength(0.08))
     .force('y', d3.forceY(height / 2).strength(0.08))
-    .force('collision', d3.forceCollide().radius(d => d.id === identityId ? 26 : 18));
+    .force('collision', d3.forceCollide().radius(d => d.id === identityId ? 41 : 18));
 
   // Zoom behavior
   const g = svg.append('g');
@@ -378,15 +378,15 @@
       .on('end', dragEnded)
     );
 
-  const identityRadius = 20;
+  const identityRadius = 35;
   const defaultRadius = 10;
 
-  // Circle background for each node — identity node is 2x with green border
+  // Circle background for each node — identity node is 3.5x with green border
   nodeElements.append('circle')
     .attr('r', d => d.id === identityId ? identityRadius : defaultRadius)
     .attr('fill', '#ddbb99')
     .attr('stroke', d => d.id === identityId ? '#669966' : '#aa8866')
-    .attr('stroke-width', d => d.id === identityId ? 4 : 1.5);
+    .attr('stroke-width', d => d.id === identityId ? 5 : 1.5);
 
   // Clip path for thumbnail images
   const defs = svg.append('defs');
