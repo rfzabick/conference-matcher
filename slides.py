@@ -4,10 +4,9 @@ import json
 import hashlib
 import base64
 import logging
-import zipfile
-import xml.etree.ElementTree as ET
 import httpx
 import anthropic
+import fitz  # PyMuPDF
 from pypdf import PdfReader, PdfWriter
 from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail
 
@@ -16,7 +15,6 @@ logger = logging.getLogger(__name__)
 PRESENTATION_ID = os.environ.get("PRESENTATION_ID", "")
 
 PDF_EXPORT_URL = f"https://docs.google.com/presentation/d/{PRESENTATION_ID}/export/pdf"
-PPTX_EXPORT_URL = f"https://docs.google.com/presentation/d/{PRESENTATION_ID}/export/pptx"
 
 DATA_DIR = os.environ.get("DATA_DIR", os.environ.get("DB_PATH", "").rsplit("/", 1)[0] or os.path.dirname(__file__))
 PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
@@ -99,115 +97,61 @@ If you cannot determine a field, use an empty string."""
         return None
 
 
-def fetch_profile_photos():
-    """Download PPTX, extract profile photos from each slide, and save locally."""
+def fetch_profile_photos(pdf_bytes=None):
+    """Render each PDF page as a thumbnail image and save locally."""
     if not PRESENTATION_ID:
         logger.warning("Missing PRESENTATION_ID. Skipping photo fetch.")
         return {"status": "skipped", "reason": "missing PRESENTATION_ID"}
 
     os.makedirs(PHOTOS_DIR, exist_ok=True)
 
-    logger.info("Downloading presentation as PPTX...")
-    try:
-        resp = httpx.get(PPTX_EXPORT_URL, follow_redirects=True, timeout=120)
-        resp.raise_for_status()
-        pptx_bytes = resp.content
-        logger.info(f"Downloaded PPTX: {len(pptx_bytes)} bytes")
-    except Exception as e:
-        logger.error(f"Failed to download PPTX: {e}")
-        return {"status": "error", "reason": str(e)}
+    # Download PDF if not provided
+    if pdf_bytes is None:
+        logger.info("Downloading PDF for photo extraction...")
+        try:
+            resp = httpx.get(PDF_EXPORT_URL, follow_redirects=True, timeout=120)
+            resp.raise_for_status()
+            pdf_bytes = resp.content
+            logger.info(f"Downloaded PDF: {len(pdf_bytes)} bytes")
+        except Exception as e:
+            logger.error(f"Failed to download PDF: {e}")
+            return {"status": "error", "reason": str(e)}
 
     try:
-        zf = zipfile.ZipFile(io.BytesIO(pptx_bytes))
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     except Exception as e:
-        logger.error(f"Failed to open PPTX as ZIP: {e}")
+        logger.error(f"Failed to open PDF: {e}")
         return {"status": "error", "reason": str(e)}
 
-    # Find all slide files (slide1.xml, slide2.xml, ...) and sort by number
-    slide_files = sorted(
-        [n for n in zf.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")],
-        key=lambda n: int(''.join(filter(str.isdigit, n.split("/")[-1])))
-    )
-    logger.info(f"Found {len(slide_files)} slides in PPTX")
-
-    ns = {
-        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
-        "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-        "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
-        "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
-    }
-
+    logger.info(f"Rendering {len(doc)} pages as thumbnails...")
     fetched = 0
     skipped = 0
     errors = 0
 
-    for slide_idx, slide_path in enumerate(slide_files):
-        slide_id = f"page_{slide_idx}"
-        # Check if we already have a photo for this slide
-        existing = [f for f in os.listdir(PHOTOS_DIR) if f.startswith(f"{slide_id}.")]
-        if existing:
+    for i in range(len(doc)):
+        slide_id = f"page_{i}"
+        photo_filename = f"{slide_id}.png"
+        photo_path = os.path.join(PHOTOS_DIR, photo_filename)
+
+        # Skip if we already have this thumbnail
+        if os.path.exists(photo_path):
             skipped += 1
             continue
 
         try:
-            # Parse the slide XML to find image references
-            slide_xml = zf.read(slide_path)
-            slide_tree = ET.fromstring(slide_xml)
+            page = doc[i]
+            # Render at 2x zoom for decent quality
+            mat = fitz.Matrix(2, 2)
+            pix = page.get_pixmap(matrix=mat)
+            pix.save(photo_path)
 
-            # Parse the relationships file for this slide
-            slide_num = slide_path.split("/")[-1]  # e.g. "slide1.xml"
-            rels_path = f"ppt/slides/_rels/{slide_num}.rels"
-            if rels_path not in zf.namelist():
-                skipped += 1
-                continue
-
-            rels_xml = zf.read(rels_path)
-            rels_tree = ET.fromstring(rels_xml)
-
-            # Build a map of relationship ID -> target file
-            rel_map = {}
-            for rel in rels_tree.findall("rel:Relationship", ns):
-                rid = rel.get("Id")
-                target = rel.get("Target")
-                if target and rid:
-                    rel_map[rid] = target
-
-            # Find all image references in the slide (blipFill elements with r:embed)
-            images = []
-            for blip in slide_tree.iter(f"{{{ns['a']}}}blip"):
-                embed_id = blip.get(f"{{{ns['r']}}}embed")
-                if embed_id and embed_id in rel_map:
-                    media_path = "ppt/slides/" + rel_map[embed_id]
-                    # Normalize path (resolve ../media/image1.png)
-                    media_path = os.path.normpath(media_path).replace("\\", "/")
-                    if media_path in zf.namelist():
-                        file_size = zf.getinfo(media_path).file_size
-                        images.append((file_size, media_path))
-
-            if not images:
-                skipped += 1
-                continue
-
-            # Pick the largest image (most likely the profile photo)
-            images.sort(reverse=True)
-            best_image_path = images[0][1]
-            ext = os.path.splitext(best_image_path)[1] or ".png"
-            photo_filename = f"{slide_id}{ext}"
-            photo_path = os.path.join(PHOTOS_DIR, photo_filename)
-
-            # Extract and save the image
-            img_data = zf.read(best_image_path)
-            with open(photo_path, "wb") as f:
-                f.write(img_data)
-
-            # Update the database
             update_attendee_thumbnail(slide_id, f"/photos/{photo_filename}")
             fetched += 1
-            logger.info(f"Saved photo for slide {slide_idx}: {photo_filename} ({len(img_data)} bytes)")
-
         except Exception as e:
-            logger.error(f"Error extracting photo from slide {slide_idx}: {e}")
+            logger.error(f"Error rendering slide {i}: {e}")
             errors += 1
+
+    doc.close()
 
     result = {"status": "completed", "fetched": fetched, "skipped": skipped, "errors": errors}
     logger.info(f"Photo fetch complete: {result}")
@@ -301,8 +245,8 @@ def refresh_slides():
     }
     logger.info(f"Slide refresh complete: {result}")
 
-    # Fetch profile photos
-    fetch_profile_photos()
+    # Render slide thumbnails from the PDF we already downloaded
+    fetch_profile_photos(pdf_bytes)
 
     # Pre-compute matches if any slides were new or updated
     if new_count > 0 or updated_count > 0:
