@@ -1,5 +1,6 @@
 import os
 import logging
+import threading
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
@@ -107,10 +108,36 @@ def download_file(filename):
     return send_from_directory(os.path.join(app.root_path, "static"), filename)
 
 
+_refresh_status = {"running": False, "result": None, "error": None}
+_refresh_lock = threading.Lock()
+
+def _run_refresh_in_background():
+    global _refresh_status
+    try:
+        result = refresh_slides()
+        with _refresh_lock:
+            _refresh_status = {"running": False, "result": result, "error": None}
+        logger.info(f"Background refresh complete: {result}")
+    except Exception as e:
+        with _refresh_lock:
+            _refresh_status = {"running": False, "result": None, "error": str(e)}
+        logger.error(f"Background refresh failed: {e}")
+
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    result = refresh_slides()
-    return jsonify(result)
+    global _refresh_status
+    with _refresh_lock:
+        if _refresh_status["running"]:
+            return jsonify({"status": "already_running"})
+        _refresh_status = {"running": True, "result": None, "error": None}
+    thread = threading.Thread(target=_run_refresh_in_background, daemon=True)
+    thread.start()
+    return jsonify({"status": "started"})
+
+@app.route("/api/refresh-status")
+def api_refresh_status():
+    with _refresh_lock:
+        return jsonify(_refresh_status)
 
 
 @app.route("/api/fetch-photos", methods=["POST"])
