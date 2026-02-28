@@ -15,40 +15,45 @@
   }
   .container { max-width: 700px; margin: 0 auto; padding: 20px; }
 
+  /* Top Nav */
+  #topnav {
+    background: #ddbb99;
+    border-bottom: 2px solid #aa8866;
+    padding: 12px 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 30px;
+    margin: -20px -20px 0;
+  }
+  #topnav .site-name {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 1.3em;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  #topnav .site-name a {
+    color: #333;
+    text-decoration: none;
+  }
+
   /* Header */
   header {
     text-align: center;
-    padding: 30px 0 20px;
-    border-bottom: 2px solid #aa8866;
-    margin-bottom: 24px;
-    background: #ddbb99;
-    margin: -20px -20px 24px;
-    padding: 30px 20px 20px;
+    padding: 20px 20px 16px;
+    margin: 0 -20px 24px;
+    background: #eeeecc;
+    border-bottom: 1px solid #cccc99;
   }
   header h1 {
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 2rem;
+    font-size: 1.6rem;
     color: #554400;
     letter-spacing: 2px;
     margin-bottom: 4px;
   }
   header p { color: #886644; font-size: 0.95rem; }
 
-  /* Identity Section */
-  #identity-section {
-    background: #eeeecc;
-    border: 1px solid #cccc99;
-    border-radius: 4px;
-    padding: 30px;
-    margin-bottom: 24px;
-    text-align: center;
-  }
-  #identity-section h2 {
-    margin-bottom: 16px;
-    font-size: 1.3rem;
-    color: #554400;
-    font-family: Arial, Helvetica, sans-serif;
-  }
+  /* Name input in matches tab */
   .autocomplete-wrap {
     position: relative;
     max-width: 400px;
@@ -95,9 +100,8 @@
   #identity-badge {
     display: none;
     align-items: center;
-    justify-content: center;
     gap: 12px;
-    margin-top: 12px;
+    margin-bottom: 16px;
   }
   #identity-badge.show { display: flex; }
   #identity-badge span {
@@ -116,10 +120,12 @@
     font-family: Arial, Helvetica, sans-serif;
   }
   #identity-badge button:hover { background: #ccaa88; }
-
-  /* Main App */
-  #main-app { display: none; }
-  #main-app.show { display: block; }
+  .matches-name-prompt {
+    margin-bottom: 16px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 0.95rem;
+    color: #554400;
+  }
 
   /* Search */
   .search-bar {
@@ -299,25 +305,14 @@
 </head>
 <body>
 <div class="container">
+  <div id="topnav">
+    <div class="site-name"><a href="https://punkgrok.org">punkgrok.org</a></div>
+  </div>
   <header>
     <h1>Conference Matcher</h1>
     <p>Find your people at the conference</p>
   </header>
 
-  <!-- Identity Section -->
-  <div id="identity-section">
-    <h2>Who are you?</h2>
-    <div class="autocomplete-wrap">
-      <input type="text" id="name-input" placeholder="Start typing your name..." autocomplete="off">
-      <div class="autocomplete-list" id="autocomplete-list"></div>
-    </div>
-    <div id="identity-badge">
-      <span id="identity-name"></span>
-      <button onclick="clearIdentity()">Change</button>
-    </div>
-  </div>
-
-  <!-- Main App (shown after identification) -->
   <div id="main-app">
     <div class="search-bar">
       <input type="text" id="search-input" placeholder="Search attendees by name, interests, or bio...">
@@ -330,7 +325,17 @@
     </div>
 
     <div class="tab-panel active" id="panel-matches">
-      <div id="matches-content"><div class="loading">Finding your best matches</div></div>
+      <div id="matches-content">
+        <div class="matches-name-prompt">Type your name to see AI-suggested matches:</div>
+        <div class="autocomplete-wrap">
+          <input type="text" id="name-input" placeholder="Start typing your name..." autocomplete="off">
+          <div class="autocomplete-list" id="autocomplete-list"></div>
+        </div>
+        <div id="identity-badge">
+          <span id="identity-name"></span>
+          <button onclick="clearIdentity()">Change</button>
+        </div>
+      </div>
     </div>
     <div class="tab-panel" id="panel-starred">
       <div id="starred-content"><div class="empty-state">No starred attendees yet. Star people you want to remember!</div></div>
@@ -380,16 +385,20 @@ async function init() {
     starredCookie.split(',').filter(Boolean).forEach(id => state.starred.add(parseInt(id)));
   }
 
-  // Check for existing identity
-  const savedName = getCookie('attendee_name');
-  if (savedName) {
-    setIdentity(savedName);
-  }
-
   // Setup listeners
   setupAutocomplete();
   setupTabs();
   setupSearch();
+
+  // Load browse and starred immediately
+  loadBrowse();
+  loadStarred();
+
+  // Restore identity if saved
+  const savedName = getCookie('attendee_name');
+  if (savedName) {
+    setIdentity(savedName);
+  }
 }
 
 // --- Autocomplete ---
@@ -453,13 +462,11 @@ function setIdentity(name) {
   setCookie('attendee_name', name);
 
   document.getElementById('name-input').style.display = 'none';
+  document.querySelector('.matches-name-prompt').style.display = 'none';
   document.getElementById('identity-badge').classList.add('show');
   document.getElementById('identity-name').textContent = name;
-  document.getElementById('main-app').classList.add('show');
 
   loadMatches();
-  loadBrowse();
-  loadStarred();
 }
 
 function clearIdentity() {
@@ -468,9 +475,16 @@ function clearIdentity() {
   deleteCookie('attendee_name');
 
   document.getElementById('name-input').style.display = '';
+  document.querySelector('.matches-name-prompt').style.display = '';
   document.getElementById('identity-badge').classList.remove('show');
-  document.getElementById('main-app').classList.remove('show');
-  document.getElementById('matches-content').innerHTML = '<div class="loading">Finding your best matches</div>';
+  document.getElementById('matches-content').innerHTML =
+    '<div class="matches-name-prompt">Type your name to see AI-suggested matches:</div>' +
+    '<div class="autocomplete-wrap">' +
+      '<input type="text" id="name-input" placeholder="Start typing your name..." autocomplete="off">' +
+      '<div class="autocomplete-list" id="autocomplete-list"></div>' +
+    '</div>' +
+    '<div id="identity-badge"><span id="identity-name"></span><button onclick="clearIdentity()">Change</button></div>';
+  setupAutocomplete();
 }
 
 // --- Tabs ---
