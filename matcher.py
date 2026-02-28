@@ -51,7 +51,7 @@ def get_matches_for_user(user_name):
 
         client = anthropic.Anthropic()
 
-        prompt = f"""You are a conference networking assistant. Given an attendee's profile and a list of other attendees, suggest the 15-25 best people for them to meet.
+        prompt = f"""You are a conference networking assistant. Given an attendee's profile and a list of other attendees, suggest the 3-10 best people for them to meet.
 
 Each attendee has three sections:
 - "Stuff I do" - their work, projects, and activities
@@ -80,12 +80,12 @@ Respond with ONLY valid JSON in this format:
   ]
 }}
 
-Order matches from strongest to weakest. Include 15-25 matches — be generous with connections. Anyone with even a loose need/share overlap should be included."""
+Order matches from strongest to weakest. Include 3-10 matches depending on how many good connections exist."""
 
         try:
             response = client.messages.create(
                 model="claude-haiku-4-5",
-                max_tokens=4096,
+                max_tokens=2048,
                 messages=[{"role": "user", "content": prompt}]
             )
 
@@ -145,7 +145,7 @@ def precompute_all_matches():
             f"[ID:{a['id']}] {all_profiles[a['id']]}" for a in others
         )
 
-        prompt = f"""You are a conference networking assistant. Given an attendee's profile and a list of other attendees, suggest the 15-25 best people for them to meet.
+        prompt = f"""You are a conference networking assistant. Given an attendee's profile and a list of other attendees, suggest the 3-10 best people for them to meet.
 
 Each attendee has three sections:
 - "Stuff I do" - their work, projects, and activities
@@ -174,12 +174,12 @@ Respond with ONLY valid JSON in this format:
   ]
 }}
 
-Order matches from strongest to weakest. Include 15-25 matches — be generous with connections. Anyone with even a loose need/share overlap should be included."""
+Order matches from strongest to weakest. Include 3-10 matches depending on how many good connections exist."""
 
         try:
             response = client.messages.create(
                 model="claude-haiku-4-5",
-                max_tokens=4096,
+                max_tokens=2048,
                 messages=[{"role": "user", "content": prompt}]
             )
 
