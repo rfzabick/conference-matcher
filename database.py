@@ -1,51 +1,21 @@
 import json
 import time
 import os
-import threading
 import psycopg2
-from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-_pool = None
-_pool_lock = threading.Lock()
-
-
-def _get_pool():
-    global _pool
-    if _pool is None:
-        with _pool_lock:
-            if _pool is None:
-                _pool = pool.ThreadedConnectionPool(
-                    minconn=2,
-                    maxconn=20,
-                    dsn=DATABASE_URL,
-                )
-    return _pool
-
 
 def get_db():
-    conn = _get_pool().getconn()
-    return conn
+    return psycopg2.connect(DATABASE_URL)
 
 
 def put_db(conn):
     try:
-        if conn.closed:
-            _get_pool().putconn(conn, close=True)
-        else:
-            # Roll back any uncommitted transaction so the connection is reusable
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            _get_pool().putconn(conn)
+        conn.close()
     except Exception:
-        try:
-            _get_pool().putconn(conn, close=True)
-        except Exception:
-            pass
+        pass
 
 
 def init_db():
