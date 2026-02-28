@@ -5,5 +5,8 @@ __pycache__/
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 .DS_Store
 *.tar.gz
+photos/
+*.pid

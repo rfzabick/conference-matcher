@@ -4,11 +4,9 @@ primary_region = 'ord'
 [build]
 
 [deploy]
-  strategy = 'rolling'
+  strategy = 'bluegreen'
 
-[env]
-  DB_PATH = '/data/conference_matcher.db'
-  DATA_DIR = '/data'
+kill_timeout = 30
 
 [http_service]
   internal_port = 8080
@@ -18,15 +16,11 @@ primary_region = 'ord'
   min_machines_running = 1
 
 [[http_service.checks]]
-  interval = '10s'
-  timeout = '3s'
-  grace_period = '10s'
+  interval = '5s'
+  timeout = '2s'
+  grace_period = '15s'
   method = 'GET'
-  path = '/api/names'
-
-[mounts]
-  source = 'data'
-  destination = '/data'
+  path = '/healthz'
 
 [[vm]]
   size = 'shared-cpu-1x'

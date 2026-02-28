@@ -8,7 +8,7 @@ import httpx
 import anthropic
 import fitz  # PyMuPDF
 from pypdf import PdfReader, PdfWriter
-from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail
+from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +16,7 @@ PRESENTATION_ID = os.environ.get("PRESENTATION_ID", "")
 
 PDF_EXPORT_URL = f"https://docs.google.com/presentation/d/{PRESENTATION_ID}/export/pdf"
 
-DATA_DIR = os.environ.get("DATA_DIR", os.environ.get("DB_PATH", "").rsplit("/", 1)[0] or os.path.dirname(__file__))
-PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.dirname(__file__))
 
 
 def download_presentation_pdf():
@@ -148,12 +147,10 @@ def debug_slide_images(page_num):
 
 
 def fetch_profile_photos(pdf_bytes=None):
-    """Render each PDF page as a thumbnail image and save locally."""
+    """Extract profile photos from PDF pages and store in database."""
     if not PRESENTATION_ID:
         logger.warning("Missing PRESENTATION_ID. Skipping photo fetch.")
         return {"status": "skipped", "reason": "missing PRESENTATION_ID"}
-
-    os.makedirs(PHOTOS_DIR, exist_ok=True)
 
     # Download PDF if not provided
     if pdf_bytes is None:
@@ -173,16 +170,37 @@ def fetch_profile_photos(pdf_bytes=None):
         logger.error(f"Failed to open PDF: {e}")
         return {"status": "error", "reason": str(e)}
 
+    # Check which slides already have photos in the DB
+    from database import get_db, put_db
+    from psycopg2.extras import RealDictCursor
+    conn = get_db()
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT slide_object_id FROM attendees WHERE photo_data IS NOT NULL")
+        has_photo = {r["slide_object_id"] for r in cur.fetchall()}
+    finally:
+        put_db(conn)
+
     logger.info(f"Extracting profile photos from {len(doc)} pages...")
     fetched = 0
     skipped = 0
     errors = 0
 
+    ext_to_mime = {
+        "png": "image/png",
+        "jpeg": "image/jpeg",
+        "jpg": "image/jpeg",
+        "jfif": "image/jpeg",
+        "jp2": "image/jp2",
+        "webp": "image/webp",
+        "gif": "image/gif",
+        "bmp": "image/bmp",
+        "tiff": "image/tiff",
+    }
+
     for i in range(len(doc)):
         slide_id = f"page_{i}"
-        # Skip if we already have a photo for this slide
-        existing = [f for f in os.listdir(PHOTOS_DIR) if f.startswith(f"{slide_id}.")]
-        if existing:
+        if slide_id in has_photo:
             skipped += 1
             continue
 
@@ -195,12 +213,10 @@ def fetch_profile_photos(pdf_bytes=None):
 
             page_area = page.rect.width * page.rect.height
 
-            # Extract all images and find the best candidate for a profile photo
             candidates = []
             for img_info in images:
                 xref = img_info[0]
                 try:
-                    # Get rendered bounding box on the page
                     rects = page.get_image_rects(img_info)
                     if not rects:
                         continue
@@ -210,18 +226,14 @@ def fetch_profile_photos(pdf_bytes=None):
                     rendered_area = rendered_w * rendered_h
                     coverage = rendered_area / max(page_area, 1)
 
-                    # Skip images that cover most of the page (backgrounds)
                     if coverage > 0.9:
                         continue
-
-                    # Skip tiny rendered images (icons, decorations)
                     if rendered_w < 30 or rendered_h < 30:
                         continue
 
-                    # Use rendered aspect ratio (photos render near-square on slides)
                     aspect = max(rendered_w, rendered_h) / max(min(rendered_w, rendered_h), 1)
                     if aspect > 4:
-                        continue  # too elongated
+                        continue
 
                     img_data = doc.extract_image(xref)
                     if not img_data:
@@ -230,16 +242,14 @@ def fetch_profile_photos(pdf_bytes=None):
                     w = img_data.get("width", 0)
                     h = img_data.get("height", 0)
                     raw = img_data.get("image", b"")
-                    # Check if image is mostly a single color (backgrounds)
                     if len(raw) < 1000 and w * h > 10000:
-                        continue  # very small file but large dimensions = solid color
+                        continue
 
-                    # Check average brightness — skip very dark images (masks, dark fills)
                     try:
                         pix = fitz.Pixmap(raw)
-                        if pix.n >= 3:  # RGB or RGBA
+                        if pix.n >= 3:
                             samples = pix.samples
-                            step = max(1, len(samples) // 3000) * pix.n  # sample ~1000 pixels
+                            step = max(1, len(samples) // 3000) * pix.n
                             total = 0
                             count = 0
                             for j in range(0, len(samples) - pix.n + 1, step):
@@ -247,10 +257,10 @@ def fetch_profile_photos(pdf_bytes=None):
                                 count += 3
                             avg_brightness = total / max(count, 1)
                             if avg_brightness < 15:
-                                continue  # nearly black image
+                                continue
                         pix = None
                     except Exception:
-                        pass  # if we can't check, keep the candidate
+                        pass
 
                     file_size = len(raw)
                     candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size))
@@ -261,16 +271,14 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Pick the most square rendered image; break ties by largest file (better quality)
-            candidates.sort(key=lambda c: (c[2], -c[5]))  # aspect asc, file_size desc
+            candidates.sort(key=lambda c: (c[2], -c[5]))
             img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             photo_filename = f"{slide_id}.{ext}"
-            photo_path = os.path.join(PHOTOS_DIR, photo_filename)
+            content_type = ext_to_mime.get(ext.lower(), f"image/{ext}")
 
-            with open(photo_path, "wb") as f:
-                f.write(img_data["image"])
-
+            # Store photo in database
+            update_attendee_photo(slide_id, img_data["image"], content_type)
             update_attendee_thumbnail(slide_id, f"/photos/{photo_filename}")
             fetched += 1
             logger.info(f"Extracted photo for slide {i}: {photo_filename} ({img_data.get('width')}x{img_data.get('height')})")

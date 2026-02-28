@@ -1,14 +1,14 @@
 import os
 import logging
 import threading
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory, Response
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_cached_matches, get_attendee_by_name, get_all_cached_matches
-from slides import refresh_slides, fetch_profile_photos, PHOTOS_DIR
+from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_cached_matches, get_attendee_by_name, get_all_cached_matches, get_attendee_photo
+from slides import refresh_slides, fetch_profile_photos
 from matcher import get_matches_for_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -21,6 +21,11 @@ init_db()
 
 
 # --- Routes ---
+
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
+
 
 @app.route("/")
 def index():
@@ -45,6 +50,8 @@ def api_search():
     for a in attendees:
         a.pop("slide_content_hash", None)
         a.pop("slide_object_id", None)
+        a.pop("photo_data", None)
+        a.pop("photo_content_type", None)
     return jsonify(attendees)
 
 
@@ -95,6 +102,8 @@ def api_stars():
     for a in attendees:
         a.pop("slide_content_hash", None)
         a.pop("slide_object_id", None)
+        a.pop("photo_data", None)
+        a.pop("photo_content_type", None)
     return jsonify(attendees)
 
 
@@ -149,7 +158,15 @@ def api_graph():
 
 @app.route("/photos/<path:filename>")
 def serve_photo(filename):
-    return send_from_directory(PHOTOS_DIR, filename)
+    # Parse slide_object_id from filename (e.g., "page_14.png" -> "page_14")
+    slide_object_id = filename.rsplit(".", 1)[0] if "." in filename else filename
+    photo_data, content_type = get_attendee_photo(slide_object_id)
+    if photo_data is None:
+        return "Not found", 404
+    response = Response(photo_data, mimetype=content_type or "image/png")
+    response.cache_control.max_age = 86400
+    response.cache_control.public = True
+    return response
 
 
 @app.route("/download/<path:filename>")
@@ -213,9 +230,13 @@ def scheduled_refresh():
         logger.error(f"Scheduled refresh failed: {e}")
 
 
-scheduler = BackgroundScheduler()
-scheduler.add_job(scheduled_refresh, "interval", hours=1, id="slide_refresh")
-scheduler.start()
+# Guard against duplicate schedulers when running with multiple threads/workers
+_scheduler_started = False
+if not _scheduler_started:
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(scheduled_refresh, "interval", hours=1, id="slide_refresh")
+    scheduler.start()
+    _scheduler_started = True
 
 
 if __name__ == "__main__":
