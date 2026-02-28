@@ -16,17 +16,20 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize database (retry on transient Postgres failures)
-for _attempt in range(3):
-    try:
-        init_db()
-        break
-    except Exception as e:
-        logger.warning(f"init_db attempt {_attempt + 1} failed: {e}")
-        import time as _time
-        _time.sleep(1)
-else:
+# Initialize database in background so worker boots fast and /healthz responds immediately
+def _init_db_background():
+    for _attempt in range(3):
+        try:
+            init_db()
+            logger.info("Database initialized successfully")
+            return
+        except Exception as e:
+            logger.warning(f"init_db attempt {_attempt + 1} failed: {e}")
+            import time as _time
+            _time.sleep(2)
     logger.error("Failed to initialize database after 3 attempts")
+
+threading.Thread(target=_init_db_background, daemon=True).start()
 
 
 # --- Routes ---
