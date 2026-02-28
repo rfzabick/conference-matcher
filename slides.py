@@ -123,32 +123,59 @@ def fetch_profile_photos(pdf_bytes=None):
         logger.error(f"Failed to open PDF: {e}")
         return {"status": "error", "reason": str(e)}
 
-    logger.info(f"Rendering {len(doc)} pages as thumbnails...")
+    logger.info(f"Extracting profile photos from {len(doc)} pages...")
     fetched = 0
     skipped = 0
     errors = 0
 
     for i in range(len(doc)):
         slide_id = f"page_{i}"
-        photo_filename = f"{slide_id}.png"
-        photo_path = os.path.join(PHOTOS_DIR, photo_filename)
-
-        # Skip if we already have this thumbnail
-        if os.path.exists(photo_path):
+        # Skip if we already have a photo for this slide
+        existing = [f for f in os.listdir(PHOTOS_DIR) if f.startswith(f"{slide_id}.")]
+        if existing:
             skipped += 1
             continue
 
         try:
             page = doc[i]
-            # Render at 2x zoom for decent quality
-            mat = fitz.Matrix(2, 2)
-            pix = page.get_pixmap(matrix=mat)
-            pix.save(photo_path)
+            images = page.get_images(full=True)
+            if not images:
+                skipped += 1
+                continue
+
+            # Extract each image and pick the largest by pixel area
+            best = None
+            for img_info in images:
+                xref = img_info[0]
+                try:
+                    img_data = doc.extract_image(xref)
+                    if not img_data:
+                        continue
+                    w = img_data.get("width", 0)
+                    h = img_data.get("height", 0)
+                    area = w * h
+                    if best is None or area > best[0]:
+                        best = (area, img_data)
+                except Exception:
+                    continue
+
+            if not best:
+                skipped += 1
+                continue
+
+            img_data = best[1]
+            ext = img_data.get("ext", "png")
+            photo_filename = f"{slide_id}.{ext}"
+            photo_path = os.path.join(PHOTOS_DIR, photo_filename)
+
+            with open(photo_path, "wb") as f:
+                f.write(img_data["image"])
 
             update_attendee_thumbnail(slide_id, f"/photos/{photo_filename}")
             fetched += 1
+            logger.info(f"Extracted photo for slide {i}: {photo_filename} ({img_data.get('width')}x{img_data.get('height')})")
         except Exception as e:
-            logger.error(f"Error rendering slide {i}: {e}")
+            logger.error(f"Error extracting photo from slide {i}: {e}")
             errors += 1
 
     doc.close()
