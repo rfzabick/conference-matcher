@@ -7,13 +7,18 @@ import logging
 import httpx
 import anthropic
 from pypdf import PdfReader, PdfWriter
-from database import get_known_slide_ids, upsert_attendee, clear_match_cache
+from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail
 
 logger = logging.getLogger(__name__)
 
 PRESENTATION_ID = os.environ.get("PRESENTATION_ID", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
 PDF_EXPORT_URL = f"https://docs.google.com/presentation/d/{PRESENTATION_ID}/export/pdf"
+SLIDES_API_URL = f"https://slides.googleapis.com/v1/presentations/{PRESENTATION_ID}"
+
+DATA_DIR = os.environ.get("DATA_DIR", os.environ.get("DB_PATH", "").rsplit("/", 1)[0] or os.path.dirname(__file__))
+PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
 
 
 def download_presentation_pdf():
@@ -91,6 +96,80 @@ If you cannot determine a field, use an empty string."""
     except (json.JSONDecodeError, IndexError):
         logger.warning(f"Failed to parse Claude response: {text[:200]}")
         return None
+
+
+def fetch_profile_photos():
+    """Fetch profile photos from Google Slides API and save locally."""
+    if not PRESENTATION_ID or not GOOGLE_API_KEY:
+        logger.warning("Missing PRESENTATION_ID or GOOGLE_API_KEY. Skipping photo fetch.")
+        return {"status": "skipped", "reason": "missing config"}
+
+    os.makedirs(PHOTOS_DIR, exist_ok=True)
+
+    logger.info("Fetching presentation data from Google Slides API...")
+    try:
+        resp = httpx.get(f"{SLIDES_API_URL}?key={GOOGLE_API_KEY}", timeout=30)
+        resp.raise_for_status()
+        presentation = resp.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch presentation from Slides API: {e}")
+        return {"status": "error", "reason": str(e)}
+
+    slides = presentation.get("slides", [])
+    logger.info(f"Found {len(slides)} slides in presentation")
+
+    fetched = 0
+    skipped = 0
+    errors = 0
+
+    for i, slide in enumerate(slides):
+        slide_id = f"page_{i}"
+        photo_path = os.path.join(PHOTOS_DIR, f"{slide_id}.png")
+
+        # Skip if we already have this photo
+        if os.path.exists(photo_path):
+            skipped += 1
+            continue
+
+        # Find image elements on this slide
+        images = []
+        for element in slide.get("pageElements", []):
+            if "image" in element:
+                img = element["image"]
+                content_url = img.get("contentUrl", "")
+                if not content_url:
+                    continue
+                # Calculate area from size
+                size = element.get("size", {})
+                w = size.get("width", {}).get("magnitude", 0)
+                h = size.get("height", {}).get("magnitude", 0)
+                images.append((w * h, content_url))
+
+        if not images:
+            skipped += 1
+            continue
+
+        # Pick the largest image (most likely the profile photo)
+        images.sort(reverse=True)
+        content_url = images[0][1]
+
+        try:
+            img_resp = httpx.get(content_url, follow_redirects=True, timeout=30)
+            img_resp.raise_for_status()
+            with open(photo_path, "wb") as f:
+                f.write(img_resp.content)
+
+            # Update the database
+            update_attendee_thumbnail(slide_id, f"/photos/{slide_id}.png")
+            fetched += 1
+            logger.info(f"Saved photo for slide {i}")
+        except Exception as e:
+            logger.error(f"Failed to download photo for slide {i}: {e}")
+            errors += 1
+
+    result = {"status": "completed", "fetched": fetched, "skipped": skipped, "errors": errors}
+    logger.info(f"Photo fetch complete: {result}")
+    return result
 
 
 def refresh_slides():
@@ -179,6 +258,9 @@ def refresh_slides():
         "errors": error_count
     }
     logger.info(f"Slide refresh complete: {result}")
+
+    # Fetch profile photos
+    fetch_profile_photos()
 
     # Pre-compute matches if any slides were new or updated
     if new_count > 0 or updated_count > 0:

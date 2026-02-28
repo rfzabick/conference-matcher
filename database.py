@@ -64,6 +64,16 @@ def upsert_attendee(slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_
     conn.close()
 
 
+def update_attendee_thumbnail(slide_object_id, thumbnail_url):
+    conn = get_db()
+    conn.execute(
+        "UPDATE attendees SET thumbnail_url = ?, updated_at = ? WHERE slide_object_id = ?",
+        (thumbnail_url, time.time(), slide_object_id)
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_all_attendees():
     conn = get_db()
     rows = conn.execute("SELECT * FROM attendees WHERE name != '' ORDER BY name").fetchall()

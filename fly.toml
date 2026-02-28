@@ -5,6 +5,7 @@ primary_region = 'ord'
 
 [env]
   DB_PATH = '/data/conference_matcher.db'
+  DATA_DIR = '/data'
 
 [http_service]
   internal_port = 8080

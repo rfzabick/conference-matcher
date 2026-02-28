@@ -233,16 +233,13 @@
     letter-spacing: 0.5px;
     margin-bottom: 2px;
   }
-  .card-thumbnail {
-    margin-top: 12px;
-    border-radius: 4px;
-    overflow: hidden;
-    border: 1px solid #cccc99;
-  }
-  .card-thumbnail img {
-    width: 100%;
-    height: auto;
-    display: block;
+  .card-photo {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #cccc99;
+    flex-shrink: 0;
   }
   .match-reason {
     margin-top: 8px;
@@ -609,9 +606,14 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
   const isStarred = state.starred.has(attendee.id);
   const mutualClass = isMutual ? ' mutual-match' : '';
 
+  const photoHtml = attendee.thumbnail_url
+    ? `<img class="card-photo" src="${esc(attendee.thumbnail_url)}" alt="${esc(attendee.name)}" loading="lazy">`
+    : '';
+
   let html = `<div class="card${mutualClass}" data-card-id="${attendee.id}">
     <div class="card-header">
-      <div>
+      ${photoHtml}
+      <div style="flex:1">
         <div class="card-name">${esc(attendee.name)}${isMutual ? '<span class="mutual-badge">MUTUAL MATCH</span>' : ''}</div>
       </div>
       <button class="star-btn" onclick="toggleStar(${attendee.id})" title="${isStarred ? 'Unstar' : 'Star'}">
@@ -631,10 +633,6 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
   }
   if (attendee.stuff_i_need) {
     html += `<div class="card-section"><div class="card-section-label">Needs</div>${esc(attendee.stuff_i_need)}</div>`;
-  }
-
-  if (attendee.thumbnail_url) {
-    html += `<div class="card-thumbnail"><img src="${esc(attendee.thumbnail_url)}" alt="Slide" loading="lazy"></div>`;
   }
 
   html += '</div>';

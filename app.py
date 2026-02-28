@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_cached_matches, get_attendee_by_name
-from slides import refresh_slides
+from slides import refresh_slides, fetch_profile_photos, PHOTOS_DIR
 from matcher import get_matches_for_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -96,6 +96,11 @@ def api_stars():
     return jsonify(attendees)
 
 
+@app.route("/photos/<path:filename>")
+def serve_photo(filename):
+    return send_from_directory(PHOTOS_DIR, filename)
+
+
 @app.route("/download/<path:filename>")
 def download_file(filename):
     return send_from_directory(os.path.join(app.root_path, "static"), filename)
@@ -104,6 +109,12 @@ def download_file(filename):
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
     result = refresh_slides()
+    return jsonify(result)
+
+
+@app.route("/api/fetch-photos", methods=["POST"])
+def api_fetch_photos():
+    result = fetch_profile_photos()
     return jsonify(result)
 
 
