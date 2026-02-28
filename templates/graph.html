@@ -275,6 +275,14 @@
   // Build node map for quick lookup
   const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
 
+  // Find identity node ID (needed before simulation for collision radius)
+  let identityId = null;
+  if (identityName) {
+    const identityNode = data.nodes.find(n => n.name.toLowerCase() === identityName.toLowerCase());
+    if (identityNode) identityId = identityNode.id;
+    console.log('Graph identity match:', identityName, '->', identityId);
+  }
+
   // Create force simulation
   // forceX/forceY pull all nodes toward center, preventing unconnected nodes
   // from drifting far out to the periphery
@@ -283,7 +291,7 @@
     .force('charge', d3.forceManyBody().strength(-120))
     .force('x', d3.forceX(width / 2).strength(0.08))
     .force('y', d3.forceY(height / 2).strength(0.08))
-    .force('collision', d3.forceCollide().radius(18));
+    .force('collision', d3.forceCollide().radius(d => d.id === identityId ? 26 : 18));
 
   // Zoom behavior
   const g = svg.append('g');
@@ -357,26 +365,21 @@
       .on('end', dragEnded)
     );
 
-  // Find identity node ID
-  let identityId = null;
-  if (identityName) {
-    const identityNode = data.nodes.find(n => n.name.toLowerCase() === identityName.toLowerCase());
-    if (identityNode) identityId = identityNode.id;
-    console.log('Graph identity match:', identityName, '->', identityId);
-  }
+  const identityRadius = 20;
+  const defaultRadius = 10;
 
-  // Circle background for each node — bold border for current user
+  // Circle background for each node — identity node is 2x with green border
   nodeElements.append('circle')
-    .attr('r', d => d.id === identityId ? 13 : 10)
+    .attr('r', d => d.id === identityId ? identityRadius : defaultRadius)
     .attr('fill', '#ddbb99')
-    .attr('stroke', d => d.id === identityId ? '#554400' : '#aa8866')
-    .attr('stroke-width', d => d.id === identityId ? 3.5 : 1.5);
+    .attr('stroke', d => d.id === identityId ? '#669966' : '#aa8866')
+    .attr('stroke-width', d => d.id === identityId ? 4 : 1.5);
 
   // Clip path for thumbnail images
   const defs = svg.append('defs');
   data.nodes.forEach(n => {
     if (n.thumbnail_url) {
-      const r = n.id === identityId ? 13 : 10;
+      const r = n.id === identityId ? identityRadius : defaultRadius;
       defs.append('clipPath')
         .attr('id', `clip-${n.id}`)
         .append('circle')
@@ -389,7 +392,7 @@
   // Add thumbnail images where available
   nodeElements.each(function(d) {
     if (d.thumbnail_url) {
-      const r = d.id === identityId ? 13 : 10;
+      const r = d.id === identityId ? identityRadius : defaultRadius;
       d3.select(this).append('image')
         .attr('xlink:href', d.thumbnail_url)
         .attr('x', -r)
@@ -525,10 +528,10 @@
     nodeElements.selectAll('image')
       .attr('opacity', d => (d.id === nodeId || neighbors.has(d.id)) ? 1 : 0.12);
 
-    // Highlight selected node, preserve identity bold border
+    // Highlight selected node, preserve identity green border
     nodeElements.select('circle')
-      .attr('stroke-width', d => d.id === nodeId ? 3.5 : (d.id === identityId ? 3.5 : 1.5))
-      .attr('stroke', d => (d.id === nodeId || d.id === identityId) ? '#554400' : '#aa8866');
+      .attr('stroke-width', d => d.id === nodeId ? 3.5 : (d.id === identityId ? 4 : 1.5))
+      .attr('stroke', d => d.id === identityId ? '#669966' : (d.id === nodeId ? '#554400' : '#aa8866'));
 
     edgeElements
       .attr('opacity', d => {
@@ -541,8 +544,8 @@
   function resetHighlight() {
     nodeElements.select('circle')
       .attr('opacity', 1)
-      .attr('stroke-width', d => d.id === identityId ? 3.5 : 1.5)
-      .attr('stroke', d => d.id === identityId ? '#554400' : '#aa8866');
+      .attr('stroke-width', d => d.id === identityId ? 4 : 1.5)
+      .attr('stroke', d => d.id === identityId ? '#669966' : '#aa8866');
     nodeElements.selectAll('image')
       .attr('opacity', 1);
     edgeElements
