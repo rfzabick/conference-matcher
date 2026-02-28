@@ -1,21 +1,32 @@
 import json
 import time
 import os
+import threading
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
+_thread_local = threading.local()
+
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, connect_timeout=5)
+    """Get a persistent per-thread connection, reused across requests."""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is not None and not conn.closed:
+        try:
+            conn.rollback()  # clear any aborted transaction state
+            return conn
+        except Exception:
+            pass
+    conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+    _thread_local.conn = conn
+    return conn
 
 
 def put_db(conn):
-    try:
-        conn.close()
-    except Exception:
-        pass
+    """No-op — connections are kept alive in thread-local storage."""
+    pass
 
 
 def init_db():
