@@ -103,6 +103,7 @@ def debug_slide_images(page_num):
     resp.raise_for_status()
     doc = fitz.open(stream=resp.content, filetype="pdf")
     page = doc[page_num]
+    page_area = page.rect.width * page.rect.height
     images = page.get_images(full=True)
     result = []
     for img_info in images:
@@ -116,19 +117,32 @@ def debug_slide_images(page_num):
             ext = img_data.get("ext", "?")
             size = len(img_data.get("image", b""))
             bpp = size / max(w * h, 1)
+
+            # Get rendered dimensions
+            rects = page.get_image_rects(img_info)
+            rendered = None
+            coverage = 0
+            if rects:
+                rect = rects[0]
+                rendered = {"width": round(rect.width, 1), "height": round(rect.height, 1),
+                            "aspect": round(max(rect.width, rect.height) / max(min(rect.width, rect.height), 1), 2)}
+                coverage = round((rect.width * rect.height) / max(page_area, 1), 3)
+
             result.append({
                 "xref": xref,
-                "width": w,
-                "height": h,
+                "native_width": w,
+                "native_height": h,
+                "rendered": rendered,
+                "coverage": coverage,
                 "ext": ext,
                 "file_size": size,
                 "bytes_per_pixel": round(bpp, 3),
-                "area": w * h,
             })
         except Exception as e:
             result.append({"xref": xref, "error": str(e)})
     doc.close()
-    return {"page": page_num, "image_count": len(result), "images": result}
+    return {"page": page_num, "page_size": {"width": round(page.rect.width, 1), "height": round(page.rect.height, 1)},
+            "image_count": len(result), "images": result}
 
 
 def fetch_profile_photos(pdf_bytes=None):
@@ -177,26 +191,48 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
+            page_area = page.rect.width * page.rect.height
+
             # Extract all images and find the best candidate for a profile photo
             candidates = []
             for img_info in images:
                 xref = img_info[0]
                 try:
+                    # Get rendered bounding box on the page
+                    rects = page.get_image_rects(img_info)
+                    if not rects:
+                        continue
+                    rect = rects[0]
+                    rendered_w = rect.width
+                    rendered_h = rect.height
+                    rendered_area = rendered_w * rendered_h
+                    coverage = rendered_area / max(page_area, 1)
+
+                    # Skip images that cover most of the page (backgrounds)
+                    if coverage > 0.5:
+                        continue
+
+                    # Skip tiny rendered images (icons, decorations)
+                    if rendered_w < 30 or rendered_h < 30:
+                        continue
+
+                    # Use rendered aspect ratio (photos render near-square on slides)
+                    aspect = max(rendered_w, rendered_h) / max(min(rendered_w, rendered_h), 1)
+                    if aspect > 4:
+                        continue  # too elongated
+
                     img_data = doc.extract_image(xref)
                     if not img_data:
                         continue
+
                     w = img_data.get("width", 0)
                     h = img_data.get("height", 0)
-                    if w < 50 or h < 50:
-                        continue  # too small (icons, decorations)
-                    aspect = max(w, h) / max(min(w, h), 1)
-                    if aspect > 4:
-                        continue  # too elongated (banners, borders)
                     # Check if image is mostly a single color (backgrounds)
                     raw = img_data.get("image", b"")
                     if len(raw) < 1000 and w * h > 10000:
                         continue  # very small file but large dimensions = solid color
-                    candidates.append((w, h, aspect, img_data))
+
+                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage))
                 except Exception:
                     continue
 
@@ -204,13 +240,8 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Remove the largest image (slide background)
-            candidates.sort(key=lambda c: c[0] * c[1], reverse=True)
-            if len(candidates) > 1:
-                candidates = candidates[1:]
-
-            # Pick the most square image (profile photos are square, badges are wide)
-            candidates.sort(key=lambda c: c[2])  # c[2] is aspect ratio, lower = more square
+            # Pick the most square rendered image (profile photos render near-square)
+            candidates.sort(key=lambda c: c[2])  # c[2] is rendered aspect ratio
             img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             photo_filename = f"{slide_id}.{ext}"
