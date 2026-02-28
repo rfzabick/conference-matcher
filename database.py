@@ -19,7 +19,7 @@ def _get_pool():
             if _pool is None:
                 _pool = pool.ThreadedConnectionPool(
                     minconn=2,
-                    maxconn=10,
+                    maxconn=20,
                     dsn=DATABASE_URL,
                 )
     return _pool
@@ -31,7 +31,21 @@ def get_db():
 
 
 def put_db(conn):
-    _get_pool().putconn(conn)
+    try:
+        if conn.closed:
+            _get_pool().putconn(conn, close=True)
+        else:
+            # Roll back any uncommitted transaction so the connection is reusable
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            _get_pool().putconn(conn)
+    except Exception:
+        try:
+            _get_pool().putconn(conn, close=True)
+        except Exception:
+            pass
 
 
 def init_db():
