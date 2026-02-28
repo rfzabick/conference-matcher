@@ -105,14 +105,21 @@ def get_attendees_by_ids(ids):
     return [dict(r) for r in rows]
 
 
-def search_attendees(query):
+def search_attendees(query, name_only=False):
     conn = get_db()
     pattern = f"%{query}%"
-    rows = conn.execute("""
-        SELECT * FROM attendees
-        WHERE name LIKE ? OR stuff_i_do LIKE ? OR stuff_i_can_share LIKE ? OR stuff_i_need LIKE ?
-        ORDER BY name
-    """, (pattern, pattern, pattern, pattern)).fetchall()
+    if name_only:
+        rows = conn.execute("""
+            SELECT * FROM attendees
+            WHERE name != '' AND name LIKE ?
+            ORDER BY name
+        """, (pattern,)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT * FROM attendees
+            WHERE name LIKE ? OR stuff_i_do LIKE ? OR stuff_i_can_share LIKE ? OR stuff_i_need LIKE ?
+            ORDER BY name
+        """, (pattern, pattern, pattern, pattern)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

@@ -130,6 +130,23 @@
   .search-bar {
     margin-bottom: 24px;
   }
+  .search-options {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 0.85rem;
+    color: #886644;
+  }
+  .search-options label {
+    cursor: pointer;
+    user-select: none;
+  }
+  .search-options input[type="checkbox"] {
+    accent-color: #aa8866;
+    cursor: pointer;
+  }
   #search-input {
     width: 100%;
     padding: 10px 14px;
@@ -234,8 +251,8 @@
     margin-bottom: 2px;
   }
   .card-photo {
-    width: 60px;
-    height: 60px;
+    width: 80px;
+    height: 80px;
     border-radius: 50%;
     object-fit: cover;
     border: 2px solid #cccc99;
@@ -312,6 +329,9 @@
   <div id="main-app">
     <div class="search-bar">
       <input type="text" id="search-input" placeholder="Search attendees by name, interests, or bio...">
+      <div class="search-options">
+        <label><input type="checkbox" id="search-name-only"> Search by name only</label>
+      </div>
     </div>
 
     <div class="tabs">
@@ -497,7 +517,10 @@ function setupTabs() {
 
 // --- Search ---
 function setupSearch() {
-  document.getElementById('search-input').addEventListener('input', (e) => {
+  const searchInput = document.getElementById('search-input');
+  const nameOnlyCheckbox = document.getElementById('search-name-only');
+
+  function doSearch() {
     clearTimeout(state.searchTimeout);
     state.searchTimeout = setTimeout(() => {
       // Switch to browse tab when searching
@@ -506,8 +529,18 @@ function setupSearch() {
       document.querySelector('[data-tab="browse"]').classList.add('active');
       document.getElementById('panel-browse').classList.add('active');
 
-      loadBrowse(e.target.value);
+      const nameOnly = nameOnlyCheckbox.checked;
+      loadBrowse(searchInput.value, nameOnly);
     }, 300);
+  }
+
+  searchInput.addEventListener('input', doSearch);
+
+  nameOnlyCheckbox.addEventListener('change', () => {
+    searchInput.placeholder = nameOnlyCheckbox.checked
+      ? 'Search attendees by name...'
+      : 'Search attendees by name, interests, or bio...';
+    if (searchInput.value.trim()) doSearch();
   });
 }
 
@@ -551,12 +584,13 @@ async function loadMatches() {
   }
 }
 
-async function loadBrowse(query = '') {
+async function loadBrowse(query = '', nameOnly = false) {
   const el = document.getElementById('browse-content');
   el.innerHTML = '<div class="loading">Loading attendees</div>';
 
   try {
-    const url = query ? `/api/search?q=${encodeURIComponent(query)}` : '/api/search';
+    let url = query ? `/api/search?q=${encodeURIComponent(query)}` : '/api/search';
+    if (query && nameOnly) url += '&name_only=1';
     const res = await fetch(url);
     const attendees = await res.json();
 

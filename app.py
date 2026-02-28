@@ -35,10 +35,11 @@ def api_names():
 @app.route("/api/search")
 def api_search():
     q = request.args.get("q", "").strip()
+    name_only = request.args.get("name_only", "").lower() in ("1", "true", "yes")
     if not q:
         attendees = get_all_attendees()
     else:
-        attendees = search_attendees(q)
+        attendees = search_attendees(q, name_only=name_only)
     # Strip internal fields
     for a in attendees:
         a.pop("slide_content_hash", None)
