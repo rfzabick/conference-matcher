@@ -81,14 +81,25 @@ def _load_match_cache():
 
 
 def _ensure_caches():
-    """Lazy-load caches on first access."""
+    """Lazy-load caches on first access, with retries."""
     global _attendees, _match_cache
     if _attendees is None or _match_cache is None:
         with _cache_lock:
-            if _attendees is None:
-                _load_attendees()
-            if _match_cache is None:
-                _load_match_cache()
+            for attempt in range(3):
+                try:
+                    if _attendees is None:
+                        _load_attendees()
+                    if _match_cache is None:
+                        _load_match_cache()
+                    break
+                except Exception as e:
+                    logger.error(f"Cache load attempt {attempt + 1} failed: {e}")
+                    # Reset thread-local connection on failure
+                    _thread_local.conn = None
+                    if attempt < 2:
+                        time.sleep(1)
+                    else:
+                        raise
 
 
 # ── Schema / init ─────────────────────────────────────────────────
