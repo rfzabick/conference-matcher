@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_cached_matches, get_attendee_by_name
+from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_cached_matches, get_attendee_by_name, get_all_cached_matches
 from slides import refresh_slides, fetch_profile_photos, PHOTOS_DIR
 from matcher import get_matches_for_user
 
@@ -96,6 +96,55 @@ def api_stars():
         a.pop("slide_content_hash", None)
         a.pop("slide_object_id", None)
     return jsonify(attendees)
+
+
+@app.route("/graph")
+def graph():
+    return render_template("graph.html")
+
+
+@app.route("/api/graph")
+def api_graph():
+    attendees = get_all_attendees()
+    nodes = [{"id": a["id"], "name": a["name"], "thumbnail_url": a.get("thumbnail_url", "")} for a in attendees]
+    node_id_by_name = {}
+    for a in attendees:
+        node_id_by_name[a["name"].lower()] = a["id"]
+
+    all_matches = get_all_cached_matches()
+
+    # Build directed edge set: source -> set of targets
+    directed = {}
+    for entry in all_matches:
+        source_name = entry["user_name"]
+        source_id = node_id_by_name.get(source_name.lower())
+        if source_id is None:
+            continue
+        match_data = entry["matches"]
+        if isinstance(match_data, dict):
+            match_list = match_data.get("matches", [])
+        elif isinstance(match_data, list):
+            match_list = match_data
+        else:
+            continue
+        for m in match_list:
+            target_id = m.get("attendee_id")
+            if target_id is not None:
+                directed.setdefault(source_id, set()).add(target_id)
+
+    # Build edges with mutual detection
+    edges = []
+    seen = set()
+    for source_id, targets in directed.items():
+        for target_id in targets:
+            edge_key = (min(source_id, target_id), max(source_id, target_id))
+            if edge_key in seen:
+                continue
+            seen.add(edge_key)
+            reverse = target_id in directed and source_id in directed.get(target_id, set())
+            edges.append({"source": source_id, "target": target_id, "mutual": reverse})
+
+    return jsonify({"nodes": nodes, "edges": edges})
 
 
 @app.route("/photos/<path:filename>")

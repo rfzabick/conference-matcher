@@ -168,6 +168,28 @@ def get_cached_matches(user_name, ttl=3600):
     return json.loads(row["matches_json"])
 
 
+def get_all_cached_matches():
+    """Return all match cache entries (latest per user) for building the social graph."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT mc.user_name, mc.matches_json
+        FROM match_cache mc
+        INNER JOIN (
+            SELECT user_name, MAX(created_at) as max_created
+            FROM match_cache
+            GROUP BY user_name
+        ) latest ON mc.user_name = latest.user_name AND mc.created_at = latest.max_created
+    """).fetchall()
+    conn.close()
+    results = []
+    for row in rows:
+        results.append({
+            "user_name": row["user_name"],
+            "matches": json.loads(row["matches_json"])
+        })
+    return results
+
+
 def clear_match_cache():
     conn = get_db()
     conn.execute("DELETE FROM match_cache")
