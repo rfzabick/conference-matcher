@@ -3,6 +3,9 @@ primary_region = 'ord'
 
 [build]
 
+[deploy]
+  strategy = 'bluegreen'
+
 [env]
   DB_PATH = '/data/conference_matcher.db'
   DATA_DIR = '/data'
@@ -13,6 +16,14 @@ primary_region = 'ord'
   auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
+
+[http_service.checks]
+  [http_service.checks.health]
+    interval = '5s'
+    timeout = '2s'
+    grace_period = '3s'
+    method = 'GET'
+    path = '/api/names'
 
 [mounts]
   source = 'data'
