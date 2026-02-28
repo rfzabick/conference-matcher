@@ -120,8 +120,13 @@ def update_attendee_photo(slide_object_id, photo_bytes, content_type):
         put_db(conn)
 
 
+_photo_cache = {}
+
 def get_attendee_photo(slide_object_id):
-    """Retrieve photo binary data from the database."""
+    """Retrieve photo binary data, cached in memory after first load."""
+    if slide_object_id in _photo_cache:
+        return _photo_cache[slide_object_id]
+
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -131,10 +136,18 @@ def get_attendee_photo(slide_object_id):
         )
         row = cur.fetchone()
         if row and row["photo_data"]:
-            return bytes(row["photo_data"]), row["photo_content_type"]
-        return None, None
+            result = (bytes(row["photo_data"]), row["photo_content_type"])
+        else:
+            result = (None, None)
+        _photo_cache[slide_object_id] = result
+        return result
     finally:
         put_db(conn)
+
+
+def clear_photo_cache():
+    """Clear the in-memory photo cache (call after re-fetching photos)."""
+    _photo_cache.clear()
 
 
 def get_all_attendees():

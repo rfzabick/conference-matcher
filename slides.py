@@ -8,7 +8,7 @@ import httpx
 import anthropic
 import fitz  # PyMuPDF
 from pypdf import PdfReader, PdfWriter
-from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo
+from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo, clear_photo_cache
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +148,7 @@ def debug_slide_images(page_num):
 
 def fetch_profile_photos(pdf_bytes=None):
     """Extract profile photos from PDF pages and store in database."""
+    clear_photo_cache()
     if not PRESENTATION_ID:
         logger.warning("Missing PRESENTATION_ID. Skipping photo fetch.")
         return {"status": "skipped", "reason": "missing PRESENTATION_ID"}
