@@ -140,8 +140,9 @@ def debug_slide_images(page_num):
             })
         except Exception as e:
             result.append({"xref": xref, "error": str(e)})
+    page_size = {"width": round(page.rect.width, 1), "height": round(page.rect.height, 1)}
     doc.close()
-    return {"page": page_num, "page_size": {"width": round(page.rect.width, 1), "height": round(page.rect.height, 1)},
+    return {"page": page_num, "page_size": page_size,
             "image_count": len(result), "images": result}
 
 
@@ -209,7 +210,7 @@ def fetch_profile_photos(pdf_bytes=None):
                     coverage = rendered_area / max(page_area, 1)
 
                     # Skip images that cover most of the page (backgrounds)
-                    if coverage > 0.5:
+                    if coverage > 0.8:
                         continue
 
                     # Skip tiny rendered images (icons, decorations)
