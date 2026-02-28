@@ -143,8 +143,8 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Extract each image and pick the largest by pixel area
-            best = None
+            # Extract all images and find the best candidate for a profile photo
+            candidates = []
             for img_info in images:
                 xref = img_info[0]
                 try:
@@ -153,17 +153,31 @@ def fetch_profile_photos(pdf_bytes=None):
                         continue
                     w = img_data.get("width", 0)
                     h = img_data.get("height", 0)
-                    area = w * h
-                    if best is None or area > best[0]:
-                        best = (area, img_data)
+                    if w < 50 or h < 50:
+                        continue  # too small (icons, decorations)
+                    aspect = max(w, h) / max(min(w, h), 1)
+                    if aspect > 4:
+                        continue  # too elongated (banners, borders)
+                    # Check if image is mostly a single color (backgrounds)
+                    raw = img_data.get("image", b"")
+                    if len(raw) < 1000 and w * h > 10000:
+                        continue  # very small file but large dimensions = solid color
+                    candidates.append((w, h, aspect, img_data))
                 except Exception:
                     continue
 
-            if not best:
+            if not candidates:
                 skipped += 1
                 continue
 
-            img_data = best[1]
+            # Prefer photos: not the largest (likely background), not the smallest
+            # Sort by area descending, skip the largest if there are multiple
+            candidates.sort(key=lambda c: c[0] * c[1], reverse=True)
+            if len(candidates) > 1:
+                # Skip the largest (likely background), take the next biggest
+                img_data = candidates[1][3]
+            else:
+                img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             photo_filename = f"{slide_id}.{ext}"
             photo_path = os.path.join(PHOTOS_DIR, photo_filename)
