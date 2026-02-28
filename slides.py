@@ -228,10 +228,28 @@ def fetch_profile_photos(pdf_bytes=None):
 
                     w = img_data.get("width", 0)
                     h = img_data.get("height", 0)
-                    # Check if image is mostly a single color (backgrounds)
                     raw = img_data.get("image", b"")
+                    # Check if image is mostly a single color (backgrounds)
                     if len(raw) < 1000 and w * h > 10000:
                         continue  # very small file but large dimensions = solid color
+
+                    # Check average brightness — skip very dark images (masks, dark fills)
+                    try:
+                        pix = fitz.Pixmap(raw)
+                        if pix.n >= 3:  # RGB or RGBA
+                            samples = pix.samples
+                            step = max(1, len(samples) // 3000) * pix.n  # sample ~1000 pixels
+                            total = 0
+                            count = 0
+                            for j in range(0, len(samples) - pix.n + 1, step):
+                                total += samples[j] + samples[j+1] + samples[j+2]
+                                count += 3
+                            avg_brightness = total / max(count, 1)
+                            if avg_brightness < 15:
+                                continue  # nearly black image
+                        pix = None
+                    except Exception:
+                        pass  # if we can't check, keep the candidate
 
                     file_size = len(raw)
                     candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size))
