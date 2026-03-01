@@ -420,10 +420,10 @@ async function init() {
     state.names = [];
   }
 
-  // Load starred from cookie
+  // Load starred from cookie (name-based)
   const starredCookie = getCookie('starred_attendees');
   if (starredCookie) {
-    starredCookie.split(',').filter(Boolean).forEach(id => state.starred.add(parseInt(id)));
+    starredCookie.split('|').filter(Boolean).forEach(name => state.starred.add(name));
   }
 
   // Setup listeners
@@ -643,8 +643,8 @@ async function loadStarred() {
   el.innerHTML = '<div class="loading">Loading starred attendees</div>';
 
   try {
-    const ids = Array.from(state.starred).join(',');
-    const res = await fetch(`/api/stars?ids=${ids}`);
+    const names = Array.from(state.starred).join('|');
+    const res = await fetch(`/api/stars?names=${encodeURIComponent(names)}`);
     const attendees = await res.json();
 
     if (!attendees.length) {
@@ -662,7 +662,7 @@ async function loadStarred() {
 
 // --- Card Rendering ---
 function renderCard(attendee, matchReason = null, isMutual = false) {
-  const isStarred = state.starred.has(attendee.id);
+  const isStarred = state.starred.has(attendee.name);
   const mutualClass = isMutual ? ' mutual-match' : '';
 
   const photoHtml = attendee.thumbnail_url
@@ -674,14 +674,14 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
     ? `<a href="${esc(attendee.linkedin_url)}" target="_blank" rel="noopener">${nameText}</a>`
     : nameText;
 
-  let html = `<div class="card${mutualClass}" data-card-id="${attendee.id}">
+  let html = `<div class="card${mutualClass}" data-card-name="${esc(attendee.name)}">
     ${photoHtml}
     <div class="card-body">
       <div class="card-header">
         <div style="flex:1">
           <div class="card-name">${nameHtml}${isMutual ? '<span class="mutual-badge">MUTUAL MATCH</span>' : ''}</div>
         </div>
-        <button class="star-btn" onclick="toggleStar(${attendee.id})" title="${isStarred ? 'Unstar' : 'Star'}">
+        <button class="star-btn" onclick="toggleStar(${JSON.stringify(attendee.name)})" title="${isStarred ? 'Unstar' : 'Star'}">
           ${isStarred ? '\u2B50' : '\u2606'}
         </button>
       </div>`;
@@ -719,18 +719,24 @@ function toBullets(str) {
 }
 
 // --- Star Toggle ---
-function toggleStar(id) {
-  if (state.starred.has(id)) {
-    state.starred.delete(id);
+function toggleStar(name) {
+  if (state.starred.has(name)) {
+    state.starred.delete(name);
   } else {
-    state.starred.add(id);
+    state.starred.add(name);
   }
-  setCookie('starred_attendees', Array.from(state.starred).join(','));
+  setCookie('starred_attendees', Array.from(state.starred).join('|'));
 
   // Update all star buttons for this attendee across all panels
-  document.querySelectorAll(`[data-card-id="${id}"] .star-btn`).forEach(btn => {
-    btn.textContent = state.starred.has(id) ? '\u2B50' : '\u2606';
-    btn.title = state.starred.has(id) ? 'Unstar' : 'Star';
+  const isStarred = state.starred.has(name);
+  document.querySelectorAll('[data-card-name]').forEach(card => {
+    if (card.dataset.cardName === name) {
+      const btn = card.querySelector('.star-btn');
+      if (btn) {
+        btn.textContent = isStarred ? '\u2B50' : '\u2606';
+        btn.title = isStarred ? 'Unstar' : 'Star';
+      }
+    }
   });
 
   // Always refresh starred panel

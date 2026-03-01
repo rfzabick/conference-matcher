@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_cached_matches, get_attendee_by_name, get_all_cached_matches, get_attendee_photo
+from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_attendees_by_names, get_cached_matches, get_attendee_by_name, get_all_cached_matches, get_attendee_photo
 from slides import refresh_slides, fetch_profile_photos
 from matcher import get_matches_for_user
 
@@ -108,14 +108,21 @@ def api_star():
 
 @app.route("/api/stars")
 def api_stars():
-    ids_param = request.args.get("ids", "")
-    if not ids_param:
-        return jsonify([])
-    try:
-        ids = [int(x) for x in ids_param.split(",") if x.strip()]
-    except ValueError:
-        return jsonify([])
-    attendees = get_attendees_by_ids(ids)
+    # Name-based lookup (used by starred panel)
+    names_param = request.args.get("names", "")
+    if names_param:
+        names = [n.strip() for n in names_param.split("|") if n.strip()]
+        attendees = get_attendees_by_names(names)
+    else:
+        # ID-based lookup (used by match page for attendee_id references)
+        ids_param = request.args.get("ids", "")
+        if not ids_param:
+            return jsonify([])
+        try:
+            ids = [int(x) for x in ids_param.split(",") if x.strip()]
+        except ValueError:
+            return jsonify([])
+        attendees = get_attendees_by_ids(ids)
     for a in attendees:
         a.pop("slide_content_hash", None)
         a.pop("slide_object_id", None)

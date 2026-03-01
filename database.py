@@ -180,6 +180,12 @@ def get_attendees_by_ids(ids):
     return [dict(a) for a in _attendees if a["id"] in id_set]
 
 
+def get_attendees_by_names(names):
+    _ensure_caches()
+    name_set = {n.lower() for n in names}
+    return [dict(a) for a in _attendees if a["name"].lower() in name_set]
+
+
 def search_attendees(query, name_only=False):
     _ensure_caches()
     pattern = query.lower()
