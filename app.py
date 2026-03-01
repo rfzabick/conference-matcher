@@ -273,6 +273,53 @@ def api_precompute_status():
         return jsonify(_precompute_status)
 
 
+_fix_linkedin_status = {"running": False, "result": None, "error": None}
+_fix_linkedin_lock = threading.Lock()
+
+def _run_fix_linkedin_in_background():
+    global _fix_linkedin_status
+    try:
+        from slides import extract_linkedin_urls, download_presentation_pdf
+        pdf_bytes = download_presentation_pdf()
+        linkedin_urls = extract_linkedin_urls(pdf_bytes)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE attendees SET linkedin_url = ''")
+        updated = 0
+        for page_num, url in linkedin_urls.items():
+            slide_id = f"page_{page_num}"
+            cur.execute("UPDATE attendees SET linkedin_url = %s WHERE slide_object_id = %s AND name != ''",
+                        (url, slide_id))
+            updated += cur.rowcount
+        conn.commit()
+        from database import _invalidate_attendees
+        _invalidate_attendees()
+        result = {"linkedin_urls_found": len(linkedin_urls), "attendees_updated": updated}
+        with _fix_linkedin_lock:
+            _fix_linkedin_status = {"running": False, "result": result, "error": None}
+        logger.info(f"LinkedIn fix complete: {result}")
+    except Exception as e:
+        with _fix_linkedin_lock:
+            _fix_linkedin_status = {"running": False, "result": None, "error": str(e)}
+        logger.error(f"LinkedIn fix failed: {e}")
+
+@app.route("/api/fix-linkedin", methods=["POST"])
+def api_fix_linkedin():
+    global _fix_linkedin_status
+    with _fix_linkedin_lock:
+        if _fix_linkedin_status["running"]:
+            return jsonify({"status": "already_running"})
+        _fix_linkedin_status = {"running": True, "result": None, "error": None}
+    thread = threading.Thread(target=_run_fix_linkedin_in_background, daemon=True)
+    thread.start()
+    return jsonify({"status": "started"})
+
+@app.route("/api/fix-linkedin-status")
+def api_fix_linkedin_status():
+    with _fix_linkedin_lock:
+        return jsonify(_fix_linkedin_status)
+
+
 @app.route("/api/fetch-photos", methods=["POST"])
 def api_fetch_photos():
     result = fetch_profile_photos()

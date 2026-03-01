@@ -41,6 +41,20 @@ def split_pdf_pages(pdf_bytes):
     return pages
 
 
+def extract_linkedin_urls(pdf_bytes):
+    """Extract LinkedIn profile URLs from PDF page hyperlinks. Returns dict of page_num -> url."""
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    result = {}
+    for i in range(len(doc)):
+        for link in doc[i].get_links():
+            uri = link.get("uri", "")
+            if "linkedin.com/in/" in uri:
+                result[i] = uri
+                break
+    doc.close()
+    return result
+
+
 def extract_attendee_data_from_pdf_page(page_bytes):
     """Use Claude to extract structured attendee data from a single-page PDF."""
     client = anthropic.Anthropic()
@@ -56,13 +70,12 @@ Extract:
 - stuff_i_do: What they do (their work, roles, projects, hobbies)
 - stuff_i_can_share: What they can share or help others with (skills, knowledge, resources)
 - stuff_i_need: What they need or are looking for (help, connections, resources, advice)
-- linkedin_url: Their LinkedIn profile URL if visible on the slide (look for linkedin.com links or LinkedIn icons with URLs)
 
 Respond ONLY with valid JSON in this exact format:
-{"name": "...", "stuff_i_do": "...", "stuff_i_can_share": "...", "stuff_i_need": "...", "linkedin_url": "..."}
+{"name": "...", "stuff_i_do": "...", "stuff_i_can_share": "...", "stuff_i_need": "..."}
 
 If this slide does not appear to be about a specific person (e.g. it's a title slide, agenda, or instructions), respond with:
-{"name": "", "stuff_i_do": "", "stuff_i_can_share": "", "stuff_i_need": "", "linkedin_url": ""}
+{"name": "", "stuff_i_do": "", "stuff_i_can_share": "", "stuff_i_need": ""}
 
 If you cannot determine a field, use an empty string."""
 
@@ -336,6 +349,10 @@ def refresh_slides():
         logger.error(f"Failed to split PDF: {e}")
         return {"status": "error", "reason": str(e)}
 
+    # Extract LinkedIn URLs from PDF hyperlinks (reliable, not AI-guessed)
+    linkedin_urls = extract_linkedin_urls(pdf_bytes)
+    logger.info(f"Found {len(linkedin_urls)} LinkedIn hyperlinks in PDF")
+
     known = get_known_slide_ids()
     new_count = 0
     updated_count = 0
@@ -382,7 +399,7 @@ def refresh_slides():
                 stuff_i_need=data.get("stuff_i_need", ""),
                 thumbnail_url="",
                 content_hash=content_hash,
-                linkedin_url=data.get("linkedin_url", "")
+                linkedin_url=linkedin_urls.get(page_num, "")
             )
 
             if is_new:
