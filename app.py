@@ -211,10 +211,10 @@ def download_file(filename):
 _refresh_status = {"running": False, "result": None, "error": None}
 _refresh_lock = threading.Lock()
 
-def _run_refresh_in_background():
+def _run_refresh_in_background(force=False):
     global _refresh_status
     try:
-        result = refresh_slides()
+        result = refresh_slides(force=force)
         with _refresh_lock:
             _refresh_status = {"running": False, "result": result, "error": None}
         logger.info(f"Background refresh complete: {result}")
@@ -230,7 +230,8 @@ def api_refresh():
         if _refresh_status["running"]:
             return jsonify({"status": "already_running"})
         _refresh_status = {"running": True, "result": None, "error": None}
-    thread = threading.Thread(target=_run_refresh_in_background, daemon=True)
+    force = request.get_json(silent=True) or {}
+    thread = threading.Thread(target=_run_refresh_in_background, kwargs={"force": force.get("force", False)}, daemon=True)
     thread.start()
     return jsonify({"status": "started"})
 

@@ -1,11 +1,8 @@
 import os
 import io
-import json
 import hashlib
-import base64
 import logging
 import httpx
-import anthropic
 import fitz  # PyMuPDF
 from pypdf import PdfReader, PdfWriter
 from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo, clear_photo_cache, clear_attendee_photo
@@ -55,59 +52,124 @@ def extract_linkedin_urls(pdf_bytes):
     return result
 
 
-def extract_attendee_data_from_pdf_page(page_bytes):
-    """Use Claude to extract structured attendee data from a single-page PDF."""
-    client = anthropic.Anthropic()
+def extract_attendee_data_from_pdf_page_text(page):
+    """Extract structured attendee data by parsing PDF page text directly.
 
-    page_b64 = base64.standard_b64encode(page_bytes).decode("utf-8")
+    Slides follow a consistent format with sections "Stuff I do",
+    "Stuff I can share/help with", and "Stuff I need", each containing
+    bullet points marked with ●. The attendee's name appears in a large
+    font near the top of the slide.
 
-    prompt = """Look at this conference slide and extract the following information about the attendee.
-The slide is from a shared deck where each person fills out one slide about themselves.
-Each slide has a name and three sections: "Stuff I do", "Stuff I can share/help with", and "Stuff I need".
+    Args:
+        page: A fitz (PyMuPDF) page object.
 
-Extract:
-- name: The person's full name
-- stuff_i_do: What they do (their work, roles, projects, hobbies)
-- stuff_i_can_share: What they can share or help others with (skills, knowledge, resources)
-- stuff_i_need: What they need or are looking for (help, connections, resources, advice)
+    Returns:
+        dict with keys name, stuff_i_do, stuff_i_can_share, stuff_i_need,
+        or None if this page is not an attendee slide.
+    """
+    import re
+    text = page.get_text()
 
-Respond ONLY with valid JSON in this exact format:
-{"name": "...", "stuff_i_do": "...", "stuff_i_can_share": "...", "stuff_i_need": "..."}
+    # --- Extract name from large-font text blocks ---
+    skip_texts = {"Stuff I do", "Stuff I can share/help with", "Stuff I can share / help with",
+                  "Stuff I need", "Example", "Full Name", "Website", "Linkedin",
+                  "Title and Company", "Please upload", "a profile picture here"}
+    blocks = page.get_text("dict")
+    name_candidates = []
+    for block in blocks["blocks"]:
+        if "lines" not in block:
+            continue
+        for line in block["lines"]:
+            for span in line["spans"]:
+                tc = span["text"].strip()
+                fs = span["size"]
+                if (fs >= 14 and tc and tc not in skip_texts
+                        and "●" not in tc and "@" not in tc
+                        and "linkedin" not in tc.lower()
+                        and "http" not in tc.lower()
+                        and len(tc) > 2 and len(tc) < 50):
+                    name_candidates.append((fs, line["bbox"][1], tc))
 
-If this slide does not appear to be about a specific person (e.g. it's a title slide, agenda, or instructions), respond with:
-{"name": "", "stuff_i_do": "", "stuff_i_can_share": "", "stuff_i_need": ""}
+    # Largest font first, then topmost
+    name_candidates.sort(key=lambda x: (-x[0], x[1]))
+    name = name_candidates[0][2].strip() if name_candidates else ""
 
-If you cannot determine a field, use an empty string."""
-
-    response = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=1024,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "document",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "application/pdf",
-                        "data": page_b64
-                    }
-                },
-                {"type": "text", "text": prompt}
-            ]
-        }]
-    )
-
-    text = response.content[0].text.strip()
-    try:
-        if "```" in text:
-            text = text.split("```json")[-1].split("```")[0].strip()
-            if not text:
-                text = response.content[0].text.split("```")[1].split("```")[0].strip()
-        return json.loads(text)
-    except (json.JSONDecodeError, IndexError):
-        logger.warning(f"Failed to parse Claude response: {text[:200]}")
+    # If no "Stuff I do" section, this is either a non-attendee page or
+    # an image-heavy page with just a name. Return name-only if we found a
+    # name AND the page has personal indicators (LinkedIn/Website text or links).
+    if "Stuff I do" not in text:
+        has_personal = ("linkedin" in text.lower() or "website" in text.lower()
+                        or any("linkedin.com" in l.get("uri", "") for l in page.get_links()))
+        if name and has_personal:
+            return {
+                "name": name,
+                "stuff_i_do": "",
+                "stuff_i_can_share": "",
+                "stuff_i_need": "",
+            }
         return None
+
+    # --- Parse sections ---
+    do_match = re.search(r"Stuff I do[\s/\w]*\n", text)
+    share_match = re.search(r"Stuff I can share/?[\s]?help with\s*\n", text)
+    need_match = re.search(r"Stuff I need\s*\n", text)
+
+    if not do_match:
+        return None
+
+    do_start = do_match.end()
+    do_end = share_match.start() if share_match else (need_match.start() if need_match else len(text))
+    do_text = text[do_start:do_end]
+
+    share_text = ""
+    if share_match:
+        share_start = share_match.end()
+        share_end = need_match.start() if need_match else len(text)
+        share_text = text[share_start:share_end]
+
+    need_text = ""
+    if need_match:
+        need_text = text[need_match.end():]
+        # Trim at contact info (email, linkedin, or name/title block after bullets)
+        lines = need_text.split("\n")
+        clean_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped == "●":
+                clean_lines.append(line)
+                continue
+            if not stripped:
+                continue
+            if "@" in stripped or "linkedin" in stripped.lower():
+                break
+            clean_lines.append(line)
+        need_text = "\n".join(clean_lines)
+
+    # --- Parse bullet points into semicolon-separated string ---
+    def parse_bullets(section_text):
+        parts = re.split(r"●\s*\n?", section_text)
+        items = []
+        for p in parts:
+            cleaned = " ".join(p.split("\n")).strip()
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            if cleaned:
+                items.append(cleaned)
+        return "; ".join(items)
+
+    stuff_i_do = parse_bullets(do_text)
+    stuff_i_can_share = parse_bullets(share_text)
+    stuff_i_need = parse_bullets(need_text)
+
+    # Skip template slides with placeholder content
+    if "add 2-4 bullet points" in stuff_i_do.lower():
+        return None
+
+    return {
+        "name": name,
+        "stuff_i_do": stuff_i_do,
+        "stuff_i_can_share": stuff_i_can_share,
+        "stuff_i_need": stuff_i_need,
+    }
 
 
 def debug_slide_images(page_num):
@@ -327,8 +389,9 @@ def fetch_profile_photos(pdf_bytes=None):
     return result
 
 
-def refresh_slides():
-    """Download presentation PDF, diff against DB, and process only new/changed slides."""
+def refresh_slides(force=False):
+    """Download presentation PDF, diff against DB, and process only new/changed slides.
+    If force=True, re-extract all slides regardless of content hash."""
     if not PRESENTATION_ID:
         logger.warning("Presentation ID not set. Skipping refresh.")
         return {"status": "skipped", "reason": "missing PRESENTATION_ID"}
@@ -353,6 +416,9 @@ def refresh_slides():
     linkedin_urls = extract_linkedin_urls(pdf_bytes)
     logger.info(f"Found {len(linkedin_urls)} LinkedIn hyperlinks in PDF")
 
+    # Open PDF with fitz for programmatic text extraction
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
     known = get_known_slide_ids()
     new_count = 0
     updated_count = 0
@@ -362,8 +428,8 @@ def refresh_slides():
     for page_num, page_bytes, content_hash in pages:
         slide_id = f"page_{page_num}"
 
-        # Skip if we already have this exact version
-        if slide_id in known and known[slide_id] == content_hash:
+        # Skip if we already have this exact version (unless force refresh)
+        if not force and slide_id in known and known[slide_id] == content_hash:
             skipped_count += 1
             continue
 
@@ -375,7 +441,8 @@ def refresh_slides():
             logger.info(f"Cleared stale photo for {slide_id} (content changed)")
 
         try:
-            data = extract_attendee_data_from_pdf_page(page_bytes)
+            fitz_page = doc[page_num]
+            data = extract_attendee_data_from_pdf_page_text(fitz_page)
             if not data or not data.get("name"):
                 logger.info(f"Slide {page_num}: no attendee data (likely title/info slide)")
                 skipped_count += 1
@@ -413,6 +480,8 @@ def refresh_slides():
             logger.error(f"Error processing slide {page_num}: {e}")
             error_count += 1
             continue
+
+    doc.close()
 
     result = {
         "status": "completed",
