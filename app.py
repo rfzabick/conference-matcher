@@ -183,8 +183,9 @@ def api_graph():
 
 @app.route("/photos/<path:filename>")
 def serve_photo(filename):
-    # Parse slide_object_id from filename (e.g., "page_14.png" -> "page_14")
-    slide_object_id = filename.rsplit(".", 1)[0] if "." in filename else filename
+    # Parse slide_object_id from filename (e.g., "attendee_14.png" -> "page_14")
+    base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    slide_object_id = base.replace("attendee_", "page_", 1) if base.startswith("attendee_") else base
     photo_data, content_type = get_attendee_photo(slide_object_id)
     if photo_data is None:
         return "Not found", 404

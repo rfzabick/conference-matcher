@@ -152,6 +152,14 @@ def init_db():
         cur.execute("ALTER TABLE attendees ADD COLUMN photo_content_type TEXT DEFAULT ''")
     conn.commit()
 
+    # Migration: rename photo URLs from /photos/page_N to /photos/attendee_N
+    # to bust browser caches after slide reorder
+    cur.execute("""
+        UPDATE attendees SET thumbnail_url = REPLACE(thumbnail_url, '/photos/page_', '/photos/attendee_')
+        WHERE thumbnail_url LIKE '/photos/page_%'
+    """)
+    conn.commit()
+
 
 # ── Attendee reads (from memory) ──────────────────────────────────
 

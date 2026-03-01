@@ -189,7 +189,8 @@ def fetch_profile_photos(pdf_bytes=None):
                 ext = (r["photo_content_type"] or "image/png").split("/")[-1]
                 if ext == "jpeg":
                     ext = "jpg"
-                repair_url = f"/photos/{r['slide_object_id']}.{ext}"
+                url_id = r['slide_object_id'].replace("page_", "attendee_", 1)
+                repair_url = f"/photos/{url_id}.{ext}"
                 update_attendee_thumbnail(r["slide_object_id"], repair_url)
                 logger.info(f"Repaired missing thumbnail_url for {r['slide_object_id']}: {repair_url}")
                 has_photo.add(r["slide_object_id"])
@@ -293,7 +294,8 @@ def fetch_profile_photos(pdf_bytes=None):
             candidates.sort(key=lambda c: (c[6], c[2], -c[5]))
             img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
-            photo_filename = f"{slide_id}.{ext}"
+            url_id = slide_id.replace("page_", "attendee_", 1)
+            photo_filename = f"{url_id}.{ext}"
             content_type = ext_to_mime.get(ext.lower(), f"image/{ext}")
 
             # Store photo in database
