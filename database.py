@@ -225,7 +225,7 @@ def upsert_attendee(slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_
             stuff_i_can_share=EXCLUDED.stuff_i_can_share,
             stuff_i_need=EXCLUDED.stuff_i_need,
             linkedin_url=EXCLUDED.linkedin_url,
-            thumbnail_url=EXCLUDED.thumbnail_url,
+            thumbnail_url=CASE WHEN EXCLUDED.thumbnail_url = '' THEN attendees.thumbnail_url ELSE EXCLUDED.thumbnail_url END,
             slide_content_hash=EXCLUDED.slide_content_hash,
             updated_at=EXCLUDED.updated_at
     """, (slide_object_id, name, stuff_i_do, stuff_i_can_share, stuff_i_need, linkedin_url, thumbnail_url, content_hash, now, now))

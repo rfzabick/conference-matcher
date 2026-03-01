@@ -171,14 +171,28 @@ def fetch_profile_photos(pdf_bytes=None):
         logger.error(f"Failed to open PDF: {e}")
         return {"status": "error", "reason": str(e)}
 
-    # Check which slides already have photos in the DB
+    # Check which slides already have photos AND a valid thumbnail_url in the DB.
+    # Slides with photo_data but empty thumbnail_url need repair (thumbnail got wiped by upsert).
     from database import get_db, put_db
     from psycopg2.extras import RealDictCursor
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT slide_object_id FROM attendees WHERE photo_data IS NOT NULL")
-        has_photo = {r["slide_object_id"] for r in cur.fetchall()}
+        cur.execute("SELECT slide_object_id, thumbnail_url, photo_content_type FROM attendees WHERE photo_data IS NOT NULL")
+        rows = cur.fetchall()
+        has_photo = set()
+        for r in rows:
+            if r["thumbnail_url"]:
+                has_photo.add(r["slide_object_id"])
+            else:
+                # Repair: photo_data exists but thumbnail_url is empty — re-set the thumbnail URL
+                ext = (r["photo_content_type"] or "image/png").split("/")[-1]
+                if ext == "jpeg":
+                    ext = "jpg"
+                repair_url = f"/photos/{r['slide_object_id']}.{ext}"
+                update_attendee_thumbnail(r["slide_object_id"], repair_url)
+                logger.info(f"Repaired missing thumbnail_url for {r['slide_object_id']}: {repair_url}")
+                has_photo.add(r["slide_object_id"])
     finally:
         put_db(conn)
 
