@@ -8,7 +8,7 @@ import httpx
 import anthropic
 import fitz  # PyMuPDF
 from pypdf import PdfReader, PdfWriter
-from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo, clear_photo_cache
+from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo, clear_photo_cache, clear_attendee_photo
 
 logger = logging.getLogger(__name__)
 
@@ -345,6 +345,11 @@ def refresh_slides():
             continue
 
         is_new = slide_id not in known
+
+        # Content changed — clear the old photo so it gets re-extracted
+        if not is_new:
+            clear_attendee_photo(slide_id)
+            logger.info(f"Cleared stale photo for {slide_id} (content changed)")
 
         try:
             data = extract_attendee_data_from_pdf_page(page_bytes)

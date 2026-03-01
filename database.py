@@ -284,6 +284,19 @@ def get_attendee_photo(slide_object_id):
     return result
 
 
+def clear_attendee_photo(slide_object_id):
+    """Clear photo data for a specific attendee so it gets re-extracted."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE attendees SET photo_data = NULL, photo_content_type = '', thumbnail_url = '', updated_at = %s WHERE slide_object_id = %s",
+        (time.time(), slide_object_id)
+    )
+    conn.commit()
+    _photo_cache.pop(slide_object_id, None)
+    _invalidate_attendees()
+
+
 def clear_photo_cache():
     _photo_cache.clear()
 
