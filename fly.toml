@@ -5,6 +5,7 @@ primary_region = 'ord'
 
 [deploy]
   strategy = 'bluegreen'
+  wait_timeout = '5m'
 
 kill_timeout = 30
 
