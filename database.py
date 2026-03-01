@@ -50,7 +50,13 @@ def _load_attendees():
                           stuff_i_need, linkedin_url, thumbnail_url, slide_content_hash,
                           created_at, updated_at
                    FROM attendees WHERE name != '' ORDER BY name""")
-    _attendees = [dict(r) for r in cur.fetchall()]
+    _attendees = []
+    for r in cur.fetchall():
+        a = dict(r)
+        # Rewrite photo URLs to bust browser caches from old page_ URLs
+        if a.get("thumbnail_url", "").startswith("/photos/page_"):
+            a["thumbnail_url"] = a["thumbnail_url"].replace("/photos/page_", "/photos/attendee_", 1)
+        _attendees.append(a)
     cur.execute("SELECT COUNT(*) as cnt FROM attendees")
     _attendee_count = cur.fetchone()["cnt"]
     logger.info(f"Loaded {len(_attendees)} attendees into memory")
@@ -152,17 +158,6 @@ def init_db():
         cur.execute("ALTER TABLE attendees ADD COLUMN photo_content_type TEXT DEFAULT ''")
     conn.commit()
 
-    # Migration: rename photo URLs from /photos/page_N to /photos/attendee_N
-    # to bust browser caches after slide reorder
-    cur.execute("""
-        UPDATE attendees SET thumbnail_url = REPLACE(thumbnail_url, '/photos/page_', '/photos/attendee_')
-        WHERE thumbnail_url LIKE '/photos/page_%'
-    """)
-    if cur.rowcount > 0:
-        logger.info(f"Migrated {cur.rowcount} thumbnail URLs from page_ to attendee_")
-    conn.commit()
-    # Invalidate in-memory cache so it reloads with updated URLs
-    _invalidate_attendees()
 
 
 # ── Attendee reads (from memory) ──────────────────────────────────
