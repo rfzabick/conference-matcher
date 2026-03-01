@@ -393,7 +393,7 @@ def refresh_slides():
 
             upsert_attendee(
                 slide_object_id=slide_id,
-                name=data.get("name", ""),
+                name=data.get("name", "").strip(),
                 stuff_i_do=data.get("stuff_i_do", ""),
                 stuff_i_can_share=data.get("stuff_i_can_share", ""),
                 stuff_i_need=data.get("stuff_i_need", ""),

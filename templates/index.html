@@ -681,7 +681,7 @@ function renderCard(attendee, matchReason = null, isMutual = false) {
         <div style="flex:1">
           <div class="card-name">${nameHtml}${isMutual ? '<span class="mutual-badge">MUTUAL MATCH</span>' : ''}</div>
         </div>
-        <button class="star-btn" onclick="toggleStar(${JSON.stringify(attendee.name)})" title="${isStarred ? 'Unstar' : 'Star'}">
+        <button class="star-btn" onclick="toggleStar('${esc(attendee.name.trim()).replace(/'/g, "&#39;")}')" title="${isStarred ? 'Unstar' : 'Star'}">
           ${isStarred ? '\u2B50' : '\u2606'}
         </button>
       </div>`;
