@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from database import init_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_attendees_by_names, get_cached_matches, get_attendee_by_name, get_all_cached_matches, get_attendee_photo
+import httpx
+from database import init_db, get_db, get_attendee_names, search_attendees, get_all_attendees, get_attendees_by_ids, get_attendees_by_names, get_cached_matches, get_attendee_by_name, get_all_cached_matches, get_attendee_photo
 from slides import refresh_slides, fetch_profile_photos
 from matcher import get_matches_for_user
 
@@ -187,8 +188,16 @@ def serve_photo(filename):
     photo_data, content_type = get_attendee_photo(slide_object_id)
     if photo_data is None:
         return "Not found", 404
+    # Use ETag based on content hash for cache validation instead of long max-age,
+    # so browsers always revalidate and never show stale photos after re-extraction
+    import hashlib
+    etag = hashlib.md5(photo_data).hexdigest()
+    if_none_match = request.headers.get("If-None-Match")
+    if if_none_match and if_none_match.strip('"') == etag:
+        return "", 304
     response = Response(photo_data, mimetype=content_type or "image/png")
-    response.cache_control.max_age = 86400
+    response.headers["ETag"] = f'"{etag}"'
+    response.cache_control.no_cache = True
     response.cache_control.public = True
     return response
 
@@ -234,6 +243,39 @@ def api_refresh_status():
 def api_fetch_photos():
     result = fetch_profile_photos()
     return jsonify(result)
+
+
+@app.route("/api/verify-mapping")
+def api_verify_mapping():
+    """Compare DB names against current PDF page text to detect stale data."""
+    import fitz
+    from slides import PDF_EXPORT_URL
+    try:
+        resp = httpx.get(PDF_EXPORT_URL, follow_redirects=True, timeout=120)
+        resp.raise_for_status()
+    except Exception as e:
+        return jsonify({"error": f"Failed to download PDF: {e}"})
+    doc = fitz.open(stream=resp.content, filetype="pdf")
+    conn = get_db()
+    from psycopg2.extras import RealDictCursor
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT slide_object_id, name FROM attendees WHERE name != ''")
+    rows = cur.fetchall()
+    results = []
+    for row in rows:
+        page_num = int(row["slide_object_id"].split("_")[1])
+        if page_num >= len(doc):
+            results.append({"page": page_num, "db_name": row["name"], "status": "OUT_OF_RANGE"})
+            continue
+        page_text = doc[page_num].get_text()[:300]
+        name_parts = row["name"].lower().split()
+        found = all(part in page_text.lower() for part in name_parts if len(part) > 2)
+        if not found and len(name_parts) >= 2:
+            found = name_parts[0] in page_text.lower() and name_parts[-1] in page_text.lower()
+        if not found:
+            results.append({"page": page_num, "db_name": row["name"], "pdf_text": page_text[:150], "status": "MISMATCH"})
+    doc.close()
+    return jsonify({"total_checked": len(rows), "mismatches": len(results), "details": results})
 
 
 @app.route("/api/debug-images")
