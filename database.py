@@ -158,7 +158,11 @@ def init_db():
         UPDATE attendees SET thumbnail_url = REPLACE(thumbnail_url, '/photos/page_', '/photos/attendee_')
         WHERE thumbnail_url LIKE '/photos/page_%'
     """)
+    if cur.rowcount > 0:
+        logger.info(f"Migrated {cur.rowcount} thumbnail URLs from page_ to attendee_")
     conn.commit()
+    # Invalidate in-memory cache so it reloads with updated URLs
+    _invalidate_attendees()
 
 
 # ── Attendee reads (from memory) ──────────────────────────────────
