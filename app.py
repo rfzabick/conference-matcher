@@ -240,6 +240,39 @@ def api_refresh_status():
         return jsonify(_refresh_status)
 
 
+_precompute_status = {"running": False, "result": None, "error": None}
+_precompute_lock = threading.Lock()
+
+def _run_precompute_in_background():
+    global _precompute_status
+    try:
+        from matcher import precompute_all_matches
+        result = precompute_all_matches()
+        with _precompute_lock:
+            _precompute_status = {"running": False, "result": result, "error": None}
+        logger.info(f"Background precompute complete: {result}")
+    except Exception as e:
+        with _precompute_lock:
+            _precompute_status = {"running": False, "result": None, "error": str(e)}
+        logger.error(f"Background precompute failed: {e}")
+
+@app.route("/api/precompute-matches", methods=["POST"])
+def api_precompute_matches():
+    global _precompute_status
+    with _precompute_lock:
+        if _precompute_status["running"]:
+            return jsonify({"status": "already_running"})
+        _precompute_status = {"running": True, "result": None, "error": None}
+    thread = threading.Thread(target=_run_precompute_in_background, daemon=True)
+    thread.start()
+    return jsonify({"status": "started"})
+
+@app.route("/api/precompute-status")
+def api_precompute_status():
+    with _precompute_lock:
+        return jsonify(_precompute_status)
+
+
 @app.route("/api/fetch-photos", methods=["POST"])
 def api_fetch_photos():
     result = fetch_profile_photos()
