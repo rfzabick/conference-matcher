@@ -243,7 +243,7 @@ def fetch_profile_photos(pdf_bytes=None):
 
                     if coverage > 0.9:
                         continue
-                    if rendered_w < 30 or rendered_h < 30:
+                    if rendered_w < 50 or rendered_h < 50:
                         continue
 
                     aspect = max(rendered_w, rendered_h) / max(min(rendered_w, rendered_h), 1)
@@ -278,7 +278,10 @@ def fetch_profile_photos(pdf_bytes=None):
                         pass
 
                     file_size = len(raw)
-                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size))
+                    # Detect upscaled images (native smaller than rendered) —
+                    # real profile photos are high-res and downscaled, not upscaled
+                    is_upscaled = (rendered_w > w * 1.1) or (rendered_h > h * 1.1)
+                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size, is_upscaled))
                 except Exception:
                     continue
 
@@ -286,7 +289,8 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            candidates.sort(key=lambda c: (c[2], -c[5]))
+            # Prefer non-upscaled images, then squarer aspect ratio, then larger file size
+            candidates.sort(key=lambda c: (c[6], c[2], -c[5]))
             img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             photo_filename = f"{slide_id}.{ext}"
