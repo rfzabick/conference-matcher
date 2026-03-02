@@ -356,11 +356,15 @@ def fetch_profile_photos(pdf_bytes=None):
                         pass
 
                     file_size = len(raw)
-                    # Detect upscaled images (native smaller than rendered) —
-                    # real profile photos are high-res and downscaled, not upscaled
-                    is_upscaled = (rendered_w > w * 1.1) or (rendered_h > h * 1.1)
-                    is_tiny = rendered_w < 100 or rendered_h < 100
-                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size, is_upscaled, is_tiny))
+                    # Profile photo detection: the slide template places the
+                    # profile photo on the left side, taking up most of the
+                    # slide height, with a roughly square-ish aspect ratio.
+                    on_left = rect.x0 < page.rect.width * 0.25
+                    tall = rendered_h > page.rect.height * 0.5
+                    squareish = aspect < 2.0
+                    is_profile = on_left and tall and squareish
+
+                    candidates.append((is_profile, coverage, file_size, aspect, img_data))
                 except Exception:
                     continue
 
@@ -368,9 +372,9 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Prefer non-upscaled, then non-tiny, then largest page coverage, then larger file size
-            candidates.sort(key=lambda c: (c[6], c[7], -c[4], -c[5]))
-            img_data = candidates[0][3]
+            # Prefer profile-positioned images, then largest coverage, then largest file
+            candidates.sort(key=lambda c: (not c[0], -c[1], -c[2]))
+            img_data = candidates[0][4]
             ext = img_data.get("ext", "png")
             url_id = slide_id.replace("page_", "attendee_", 1)
             photo_filename = f"{url_id}.{ext}"
