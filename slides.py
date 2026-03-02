@@ -359,7 +359,8 @@ def fetch_profile_photos(pdf_bytes=None):
                     # Detect upscaled images (native smaller than rendered) —
                     # real profile photos are high-res and downscaled, not upscaled
                     is_upscaled = (rendered_w > w * 1.1) or (rendered_h > h * 1.1)
-                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size, is_upscaled))
+                    is_tiny = rendered_w < 100 or rendered_h < 100
+                    candidates.append((rendered_w, rendered_h, aspect, img_data, coverage, file_size, is_upscaled, is_tiny))
                 except Exception:
                     continue
 
@@ -367,8 +368,8 @@ def fetch_profile_photos(pdf_bytes=None):
                 skipped += 1
                 continue
 
-            # Prefer non-upscaled images, then squarer aspect ratio, then larger file size
-            candidates.sort(key=lambda c: (c[6], c[2], -c[5]))
+            # Prefer non-upscaled, then non-tiny, then largest page coverage, then larger file size
+            candidates.sort(key=lambda c: (c[6], c[7], -c[4], -c[5]))
             img_data = candidates[0][3]
             ext = img_data.get("ext", "png")
             url_id = slide_id.replace("page_", "attendee_", 1)
