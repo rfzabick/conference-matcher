@@ -145,7 +145,7 @@ def extract_attendee_data_from_pdf_page_text(page):
             clean_lines.append(line)
         need_text = "\n".join(clean_lines)
 
-    # --- Parse bullet points into semicolon-separated string ---
+    # --- Parse bullet points, preserving original bullet structure ---
     def parse_bullets(section_text):
         parts = re.split(r"●\s*\n?", section_text)
         items = []
@@ -154,7 +154,9 @@ def extract_attendee_data_from_pdf_page_text(page):
             cleaned = re.sub(r"\s+", " ", cleaned).strip()
             if cleaned:
                 items.append(cleaned)
-        return "; ".join(items)
+        if len(items) <= 1:
+            return items[0] if items else ""
+        return "\n".join("• " + item for item in items)
 
     stuff_i_do = parse_bullets(do_text)
     stuff_i_can_share = parse_bullets(share_text)

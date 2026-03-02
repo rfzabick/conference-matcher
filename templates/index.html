@@ -713,9 +713,10 @@ function esc(str) {
 
 function toBullets(str) {
   if (!str) return '';
-  const items = str.split(';').map(s => s.trim()).filter(Boolean);
-  if (items.length <= 1) return esc(str);
-  return '<ul>' + items.map(item => `<li>${esc(item)}</li>`).join('') + '</ul>';
+  const lines = str.split('\n');
+  const bullets = lines.filter(l => l.startsWith('• '));
+  if (bullets.length <= 1) return esc(str);
+  return '<ul>' + bullets.map(b => `<li>${esc(b.slice(2))}</li>`).join('') + '</ul>';
 }
 
 // --- Star Toggle ---
