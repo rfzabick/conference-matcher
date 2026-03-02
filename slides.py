@@ -421,7 +421,9 @@ def refresh_slides(force=False):
     # Open PDF with fitz for programmatic text extraction
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
+    logger.info("Querying DB for known slide IDs...")
     known = get_known_slide_ids()
+    logger.info(f"Found {len(known)} known slides in DB")
     new_count = 0
     updated_count = 0
     skipped_count = 0

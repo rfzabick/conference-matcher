@@ -17,10 +17,19 @@ def get_db():
     conn = getattr(_thread_local, "conn", None)
     if conn is not None and not conn.closed:
         try:
+            # rollback() can succeed on a socket that's dead server-side;
+            # SELECT 1 forces a real round-trip to verify the connection.
             conn.rollback()
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
             return conn
         except Exception:
-            pass
+            logger.info("Stale DB connection detected, reconnecting")
+            try:
+                conn.close()
+            except Exception:
+                pass
     conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
     _thread_local.conn = conn
     return conn
