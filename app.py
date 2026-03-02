@@ -360,29 +360,6 @@ def api_verify_mapping():
     return jsonify({"total_checked": len(rows), "mismatches": len(results), "details": results})
 
 
-@app.route("/api/clear-photos-for-new-algorithm", methods=["POST"])
-def api_clear_photos_for_new_algorithm():
-    """One-time endpoint: clear photos for slides affected by the algorithm change."""
-    import time
-    affected = ["page_9", "page_24", "page_45", "page_75", "page_110", "page_164"]
-    conn = get_db()
-    cur = conn.cursor()
-    cleared = []
-    for slide_id in affected:
-        cur.execute(
-            "UPDATE attendees SET photo_data = NULL, photo_content_type = '', thumbnail_url = '', updated_at = %s WHERE slide_object_id = %s RETURNING name",
-            (time.time(), slide_id),
-        )
-        row = cur.fetchone()
-        cleared.append({"slide": slide_id, "name": row[0] if row else "(not found)"})
-    conn.commit()
-    from database import _invalidate_attendees, _photo_cache
-    for slide_id in affected:
-        _photo_cache.pop(slide_id, None)
-    _invalidate_attendees()
-    return jsonify({"cleared": cleared, "next": "POST /api/fetch-photos to re-extract"})
-
-
 @app.route("/api/debug-images")
 def api_debug_images():
     """Show all images extracted from a specific slide."""
