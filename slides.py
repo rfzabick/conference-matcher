@@ -5,7 +5,8 @@ import logging
 import httpx
 import fitz  # PyMuPDF
 from pypdf import PdfReader, PdfWriter
-from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo, clear_photo_cache, clear_attendee_photo
+from database import get_known_slide_ids, upsert_attendee, clear_match_cache, update_attendee_thumbnail, update_attendee_photo, clear_photo_cache, clear_attendee_photo, suppress_cache_invalidation, load_fresh_attendees, swap_caches, _invalidate_attendees
+from matcher import precompute_all_matches
 
 logger = logging.getLogger(__name__)
 
@@ -434,82 +435,92 @@ def refresh_slides(force=False):
     skipped_count = 0
     error_count = 0
 
-    for page_num, page_bytes, content_hash in pages:
-        slide_id = f"page_{page_num}"
+    # Suppress cache invalidation during the entire batch so the old cache
+    # keeps serving requests until we swap in the new one.
+    with suppress_cache_invalidation():
+        for page_num, page_bytes, content_hash in pages:
+            slide_id = f"page_{page_num}"
 
-        # Skip if we already have this exact version (unless force refresh)
-        if not force and slide_id in known and known[slide_id] == content_hash:
-            skipped_count += 1
-            continue
-
-        is_new = slide_id not in known
-
-        # Content changed — clear the old photo so it gets re-extracted
-        if not is_new:
-            clear_attendee_photo(slide_id)
-            logger.info(f"Cleared stale photo for {slide_id} (content changed)")
-
-        try:
-            fitz_page = doc[page_num]
-            data = extract_attendee_data_from_pdf_page_text(fitz_page)
-            if not data or not data.get("name"):
-                logger.info(f"Slide {page_num}: no attendee data (likely title/info slide)")
+            # Skip if we already have this exact version (unless force refresh)
+            if not force and slide_id in known and known[slide_id] == content_hash:
                 skipped_count += 1
-                # Still record the hash so we don't re-process it
-                upsert_attendee(
-                    slide_object_id=slide_id,
-                    name="",
-                    stuff_i_do="",
-                    stuff_i_can_share="",
-                    stuff_i_need="",
-                    thumbnail_url="",
-                    content_hash=content_hash
-                )
                 continue
 
-            upsert_attendee(
-                slide_object_id=slide_id,
-                name=data.get("name", "").strip(),
-                stuff_i_do=data.get("stuff_i_do", ""),
-                stuff_i_can_share=data.get("stuff_i_can_share", ""),
-                stuff_i_need=data.get("stuff_i_need", ""),
-                thumbnail_url="",
-                content_hash=content_hash,
-                linkedin_url=linkedin_urls.get(page_num, "")
+            is_new = slide_id not in known
+
+            # Content changed — clear the old photo so it gets re-extracted
+            if not is_new:
+                clear_attendee_photo(slide_id)
+                logger.info(f"Cleared stale photo for {slide_id} (content changed)")
+
+            try:
+                fitz_page = doc[page_num]
+                data = extract_attendee_data_from_pdf_page_text(fitz_page)
+                if not data or not data.get("name"):
+                    logger.info(f"Slide {page_num}: no attendee data (likely title/info slide)")
+                    skipped_count += 1
+                    # Still record the hash so we don't re-process it
+                    upsert_attendee(
+                        slide_object_id=slide_id,
+                        name="",
+                        stuff_i_do="",
+                        stuff_i_can_share="",
+                        stuff_i_need="",
+                        thumbnail_url="",
+                        content_hash=content_hash
+                    )
+                    continue
+
+                upsert_attendee(
+                    slide_object_id=slide_id,
+                    name=data.get("name", "").strip(),
+                    stuff_i_do=data.get("stuff_i_do", ""),
+                    stuff_i_can_share=data.get("stuff_i_can_share", ""),
+                    stuff_i_need=data.get("stuff_i_need", ""),
+                    thumbnail_url="",
+                    content_hash=content_hash,
+                    linkedin_url=linkedin_urls.get(page_num, "")
+                )
+
+                if is_new:
+                    new_count += 1
+                    logger.info(f"Added new attendee: {data.get('name')}")
+                else:
+                    updated_count += 1
+                    logger.info(f"Updated attendee: {data.get('name')}")
+
+            except Exception as e:
+                logger.error(f"Error processing slide {page_num}: {e}")
+                error_count += 1
+                continue
+
+        doc.close()
+
+        result = {
+            "status": "completed",
+            "total_slides": len(pages),
+            "new": new_count,
+            "updated": updated_count,
+            "skipped": skipped_count,
+            "errors": error_count
+        }
+        logger.info(f"Slide refresh complete: {result}")
+
+        # Render slide thumbnails from the PDF we already downloaded
+        fetch_profile_photos(pdf_bytes)
+
+        if new_count > 0 or updated_count > 0:
+            # Build new caches from DB without disturbing the live cache
+            logger.info("New/updated slides found — rebuilding match cache in shadow...")
+            new_attendees, new_att_count = load_fresh_attendees()
+            new_match_cache = precompute_all_matches(
+                shadow_attendees=new_attendees, shadow_count=new_att_count
             )
+            swap_caches(new_attendees, new_att_count, new_match_cache)
 
-            if is_new:
-                new_count += 1
-                logger.info(f"Added new attendee: {data.get('name')}")
-            else:
-                updated_count += 1
-                logger.info(f"Updated attendee: {data.get('name')}")
-
-        except Exception as e:
-            logger.error(f"Error processing slide {page_num}: {e}")
-            error_count += 1
-            continue
-
-    doc.close()
-
-    result = {
-        "status": "completed",
-        "total_slides": len(pages),
-        "new": new_count,
-        "updated": updated_count,
-        "skipped": skipped_count,
-        "errors": error_count
-    }
-    logger.info(f"Slide refresh complete: {result}")
-
-    # Render slide thumbnails from the PDF we already downloaded
-    fetch_profile_photos(pdf_bytes)
-
-    # Pre-compute matches if any slides were new or updated
-    if new_count > 0 or updated_count > 0:
-        logger.info("New/updated slides found — clearing match cache and pre-computing matches...")
-        clear_match_cache()
-        from matcher import precompute_all_matches
-        precompute_all_matches()
+    # If invalidation was suppressed but no match rebuild happened,
+    # reload attendees to pick up any photo/thumbnail changes.
+    if not (new_count > 0 or updated_count > 0):
+        _invalidate_attendees()
 
     return result

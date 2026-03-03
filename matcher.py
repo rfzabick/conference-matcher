@@ -2,7 +2,7 @@ import json
 import logging
 import threading
 import anthropic
-from database import get_all_attendees, get_attendee_by_name, get_cached_matches, set_cached_matches
+from database import get_all_attendees, get_attendee_by_name, get_cached_matches, set_cached_matches, set_cached_matches_db_only
 
 logger = logging.getLogger(__name__)
 
@@ -120,16 +120,23 @@ def get_matches_for_user(user_name):
             return {"error": str(e)}
 
 
-def precompute_all_matches():
-    """Pre-compute matches for every attendee. Call after reingestion."""
-    all_attendees = get_all_attendees()
+def precompute_all_matches(shadow_attendees: list[dict] | None = None, shadow_count: int | None = None) -> dict | None:
+    """Pre-compute matches for every attendee.
+
+    When called with shadow_attendees/shadow_count (during refresh), builds a
+    new match cache dict without touching the live cache and returns it.
+    When called without (manual trigger), updates the live cache in place.
+    """
+    shadow_mode = shadow_attendees is not None
+    all_attendees = shadow_attendees if shadow_mode else get_all_attendees()
+
     if len(all_attendees) < 2:
         logger.info("Not enough attendees to pre-compute matches")
-        return
+        return {} if shadow_mode else None
 
-    logger.info(f"Pre-computing matches for {len(all_attendees)} attendees...")
+    logger.info(f"Pre-computing matches for {len(all_attendees)} attendees...{' (shadow)' if shadow_mode else ''}")
 
-    # Build the system prompt once — Anthropic caches it across all 186 calls
+    # Build the system prompt once — Anthropic caches it across all calls
     # (~80-85% savings on input tokens after the first call)
     system_prompt = _build_system_prompt(all_attendees)
     all_profiles = {a["id"]: _format_profile(a) for a in all_attendees}
@@ -137,12 +144,14 @@ def precompute_all_matches():
     client = anthropic.Anthropic()
     computed = 0
     errors = 0
+    new_cache = {} if shadow_mode else None
 
     for user in all_attendees:
-        # Skip if already cached and valid
-        cached = get_cached_matches(user["name"])
-        if cached is not None:
-            continue
+        if not shadow_mode:
+            # Skip if already cached and valid
+            cached = get_cached_matches(user["name"])
+            if cached is not None:
+                continue
 
         user_profile = all_profiles[user["id"]]
 
@@ -167,7 +176,12 @@ def precompute_all_matches():
                 if m.get("attendee_id") in valid_ids
             ]
 
-            set_cached_matches(user["name"], result)
+            if shadow_mode:
+                entry = set_cached_matches_db_only(user["name"], result, shadow_count)
+                new_cache[user["name"]] = entry
+            else:
+                set_cached_matches(user["name"], result)
+
             computed += 1
             logger.info(f"Pre-computed matches for {user['name']} ({computed}/{len(all_attendees)})")
 
@@ -176,6 +190,7 @@ def precompute_all_matches():
             errors += 1
 
     logger.info(f"Pre-computation complete: {computed} computed, {errors} errors")
+    return new_cache if shadow_mode else None
 
 
 def _format_profile(attendee):

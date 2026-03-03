@@ -3,6 +3,7 @@ import time
 import os
 import threading
 import logging
+from contextlib import contextmanager
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -48,6 +49,7 @@ _attendees = None        # list of dicts (no photo_data)
 _attendee_count = None   # int
 _match_cache = None      # dict: user_name -> {"matches_json": str, "attendee_count": int, "created_at": float}
 _photo_cache = {}        # dict: slide_object_id -> (bytes, content_type)
+_suppress_invalidation = False  # when True, _invalidate_attendees() is a no-op
 
 
 def _load_attendees():
@@ -267,11 +269,52 @@ def update_attendee_thumbnail(slide_object_id, thumbnail_url):
     _invalidate_attendees()
 
 
-def _invalidate_attendees():
+def _invalidate_attendees() -> None:
+    if _suppress_invalidation:
+        return
     global _attendees, _attendee_count
     with _cache_lock:
         _attendees = None
         _attendee_count = None
+
+
+@contextmanager
+def suppress_cache_invalidation():
+    """Prevent _invalidate_attendees() from clearing caches during batch operations."""
+    global _suppress_invalidation
+    _suppress_invalidation = True
+    try:
+        yield
+    finally:
+        _suppress_invalidation = False
+
+
+def load_fresh_attendees() -> tuple[list[dict], int]:
+    """Load attendees from DB and return (list, count) without touching global caches."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""SELECT id, slide_object_id, name, stuff_i_do, stuff_i_can_share,
+                          stuff_i_need, linkedin_url, thumbnail_url, slide_content_hash,
+                          created_at, updated_at
+                   FROM attendees WHERE name != '' ORDER BY name""")
+    attendees = []
+    for r in cur.fetchall():
+        a = dict(r)
+        if a.get("thumbnail_url", "").startswith("/photos/page_"):
+            a["thumbnail_url"] = a["thumbnail_url"].replace("/photos/page_", "/photos/attendee_", 1)
+        attendees.append(a)
+    cur.execute("SELECT COUNT(*) as cnt FROM attendees")
+    count = cur.fetchone()["cnt"]
+    return attendees, count
+
+
+def swap_caches(new_attendees: list[dict], new_count: int, new_match_cache: dict) -> None:
+    """Atomically swap all in-memory caches to new values."""
+    global _attendees, _attendee_count, _match_cache
+    _attendees = new_attendees
+    _attendee_count = new_count
+    _match_cache = new_match_cache
+    logger.info(f"Cache swap complete: {len(new_attendees)} attendees, {len(new_match_cache)} match entries")
 
 
 # ── Photo reads/writes (in-memory cache) ─────────────────────────
@@ -369,6 +412,24 @@ def set_cached_matches(user_name, matches):
             "attendee_count": count,
             "created_at": now,
         }
+
+
+def set_cached_matches_db_only(user_name: str, matches: dict, attendee_count: int) -> dict:
+    """Write matches to Postgres without touching the in-memory cache."""
+    conn = get_db()
+    now = time.time()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM match_cache WHERE user_name = %s", (user_name,))
+    cur.execute("""
+        INSERT INTO match_cache (user_name, matches_json, attendee_count, created_at)
+        VALUES (%s, %s, %s, %s)
+    """, (user_name, json.dumps(matches), attendee_count, now))
+    conn.commit()
+    return {
+        "matches_json": json.dumps(matches),
+        "attendee_count": attendee_count,
+        "created_at": now,
+    }
 
 
 def clear_match_cache():
