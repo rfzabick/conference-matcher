@@ -2,7 +2,6 @@ import os
 import logging
 import threading
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response
-from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -368,23 +367,22 @@ def api_debug_images():
     return jsonify(debug_slide_images(int(page)))
 
 
-# --- Background Scheduler ---
+# --- Background Scheduler (disabled) ---
+# Hourly slide refresh is disabled. The app serves cached data only.
 
-def scheduled_refresh():
-    logger.info("Running scheduled slide refresh...")
-    try:
-        refresh_slides()
-    except Exception as e:
-        logger.error(f"Scheduled refresh failed: {e}")
+# def scheduled_refresh():
+#     logger.info("Running scheduled slide refresh...")
+#     try:
+#         refresh_slides()
+#     except Exception as e:
+#         logger.error(f"Scheduled refresh failed: {e}")
 
-
-# Guard against duplicate schedulers when running with multiple threads/workers
-_scheduler_started = False
-if not _scheduler_started:
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(scheduled_refresh, "interval", hours=1, id="slide_refresh")
-    scheduler.start()
-    _scheduler_started = True
+# _scheduler_started = False
+# if not _scheduler_started:
+#     scheduler = BackgroundScheduler()
+#     scheduler.add_job(scheduled_refresh, "interval", hours=1, id="slide_refresh")
+#     scheduler.start()
+#     _scheduler_started = True
 
 
 if __name__ == "__main__":
